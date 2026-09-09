@@ -1135,19 +1135,25 @@ async function baCutWork(u) {
   baCutRefresh();
 }
 function baImgUrl(m) {
+  if (m && m.cut_pic) return m.cut_pic;
   const u = hdUrl(m && m.good_pic);
   return (u && baCut.done[u]) ? baCut.done[u] : u;
 }
 function baLoadPhotos(models) {
   const queue = [];
-  models.forEach(m => { const hu = hdUrl(m.good_pic); if (hu && !baImgCache[hu]) queue.push(hu); });
+  models.forEach(m => {
+    const cu = m.cut_pic;
+    if (cu && !baImgCache[cu]) { queue.push(cu); baImgCache[cu] = 'loading'; }
+    const hu = hdUrl(m.good_pic);
+    if (hu && !baImgCache[hu]) { baImgCache[hu] = 'loading'; queue.push(hu); }
+  });
   let idx = 0, inflight = 0;
   const tick = () => {
     while (inflight < 8 && idx < queue.length) {
       const u = queue[idx++];
-      baImgCache[u] = 'loading'; inflight++;
+      inflight++;
       const im = new Image();
-      im.onload = () => { baImgCache[u] = im; inflight--; if (chartBaProd) chartBaProd.draw(); if (chartBaCmp) chartBaCmp.draw(); tick(); baCutEnsure(u); };
+      im.onload = () => { baImgCache[u] = im; inflight--; if (chartBaProd) chartBaProd.draw(); if (chartBaCmp) chartBaCmp.draw(); tick(); if (u && !baCut.done[u] && !baCut.queued[u]) baCutEnsure(u); };
       im.onerror = () => { baImgCache[u] = null; inflight--; tick(); };
       im.src = u;
     }
@@ -1375,7 +1381,7 @@ function baShowPriceBucket(bk) {
   const rows=bk.list.slice(0,50);
   if(rows.length===0){ content.innerHTML='<p style="color:#999;font-size:13px;">'+t('no_models')+'</p>'; }
   else {
-    content.innerHTML=`<table><thead><tr><th></th><th>${t('th_model')}</th><th>${t('th_type')}</th><th>${t('th_min')}</th></tr></thead><tbody>${rows.map(m=>`<tr><td>${m.good_pic?`<img src="${hdUrl(m.good_pic)}" style="width:36px;height:36px;object-fit:cover;border-radius:4px">`:''}</td><td>${m.good_name}</td><td><span class="type-tag">${tType(m.vehicle_type)}</span></td><td class="price">${fmtK(m.min_price)}</td></tr>`).join('')}</tbody></table>`;
+    content.innerHTML=`<table><thead><tr><th></th><th>${t('th_model')}</th><th>${t('th_type')}</th><th>${t('th_min')}</th></tr></thead><tbody>${rows.map(m=>`<tr><td>${m.good_pic?`<img src="${baImgUrl(m)}" style="width:36px;height:36px;object-fit:cover;border-radius:4px">`:''}</td><td>${m.good_name}</td><td><span class="type-tag">${tType(m.vehicle_type)}</span></td><td class="price">${fmtK(m.min_price)}</td></tr>`).join('')}</tbody></table>`;
   }
   panel.classList.add('active');
 }
