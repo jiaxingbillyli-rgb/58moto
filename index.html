@@ -181,6 +181,7 @@ body.light #baProdInfo { color:#666 !important; }
 .btn-off { background: #777 !important; }
 #baCutState { font-size: 12px; color: #999; margin-left: 6px; }
 body.light #baCutState { color: #666; }
+img[src*="/cut/"]{background:#fff;}
 </style>
 </head>
 <body>
@@ -695,7 +696,7 @@ async function loadTab1Models() {
   document.getElementById('modelInfo1').textContent = zhEn(`共 ${d.total} 款车型`, `${d.total} models`);
   document.getElementById('modelTbody1').innerHTML = d.models.map(m=>{
     const disp=extractDisp(m.good_name);
-    return `<tr><td>${m.good_pic?`<img src="${hdUrl(m.good_pic)}" loading="lazy">`:''}</td>
+    return `<tr><td>${m.good_pic?`<img src="${baImgUrl(m)}" loading="lazy">`:''}</td>
     <td>${m.good_name}</td><td>${tBrand(m.brand_name)}</td><td>${m.series_name||'-'}</td>
     <td><span class="type-tag">${tType(m.vehicle_type)}</span></td>
     <td><span class="energy-tag ${m.energy_label==='燃油'?'fuel':'elec'}">${tEnergy(m.energy_label)}</span></td>
@@ -811,7 +812,7 @@ function showPriceDetail(m) {
     <table><thead><tr><th>${t('th_series')}</th><th>${t('th_type')}</th><th>${t('th_energy')}</th><th>${t('th_min')}</th><th>${t('th_max')}</th></tr></thead>
     <tbody><tr><td>${m.series_name||'-'}</td><td><span class="type-tag">${tType(m.vehicle_type)}</span></td>
     <td>${tEnergy(m.energy_label)}</td><td class="price">${fmtPrice(m.min_price)}</td><td class="price">${fmtPrice(m.max_price)}</td></tr></tbody></table>
-    ${m.good_pic?`<div style="margin-top:8px"><img src="${hdUrl(m.good_pic)}" style="height:90px;border-radius:6px"></div>`:''}`;
+    ${m.good_pic?`<div style="margin-top:8px"><img src="${baImgUrl(m)}" style="height:90px;border-radius:6px;background:#fff"></div>`:''}`;
   document.getElementById('matrixModelsPanel1').classList.add('active');
 }
 async function loadMatrix2() {
@@ -884,7 +885,7 @@ async function loadFilteredModels() {
   document.getElementById('modelInfo2').textContent = zhEn(`共 ${d.total} 款车型`, `${d.total} models`);
   document.getElementById('modelTbody2').innerHTML = d.models.map(m=>{
     const disp=extractDisp(m.good_name);
-    return `<tr><td>${m.good_pic?`<img src="${hdUrl(m.good_pic)}" loading="lazy">`:''}</td>
+    return `<tr><td>${m.good_pic?`<img src="${baImgUrl(m)}" loading="lazy">`:''}</td>
     <td>${m.good_name}</td><td>${tBrand(m.brand_name)}</td><td>${m.series_name||'-'}</td>
     <td><span class="type-tag">${tType(m.vehicle_type)}</span></td>
     <td><span class="energy-tag ${m.energy_label==='燃油'?'fuel':'elec'}">${tEnergy(m.energy_label)}</span></td>
@@ -1412,7 +1413,7 @@ function baDrawProd(rows) {
     {dl:t('dl_max'),dv:fmtK(m.max_price),cls:'price'}
   ];
   grid.innerHTML=items.map(i=>`<div class="detail-item"><div class="dl">${i.dl}</div><div class="dv ${i.cls||''}">${i.dv}</div></div>`).join('');
-  if(m.good_pic) grid.innerHTML+=`<div class="detail-item" style="grid-column:1/-1"><img src="${baImgUrl(m)}" style="width:158px;height:158px;object-fit:cover;border-radius:6px;background:#26262c;padding:6px;display:block"></div>`;
+  if(m.good_pic) grid.innerHTML+=`<div class="detail-item" style="grid-column:1/-1"><img src="${baImgUrl(m)}" style="width:158px;height:158px;object-fit:cover;border-radius:6px;background:#ffffff;padding:6px;display:block"></div>`;
   panel.classList.add('active');
 }
 async function loadBaCompare() {
