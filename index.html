@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>58moto 摩托车车型数据库</title>
-<script src="./chart.umd.js"></script>
+<script src="/chart.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Segoe UI',system-ui,sans-serif; background:#0a0a0a;
@@ -248,11 +248,24 @@ img[src*="/cut/"]{background:#fff;}
   <div class="header-top">
     <h1 data-i18n="app_title">🏍️ <span class="tag">58moto</span> 摩托车车型数据库</h1>
     <div style="display:flex;gap:8px;align-items:center;">
+      <button id="updateBtn" class="update-btn" onclick="triggerUpdate()" data-i18n="update_btn">🔄 更新数据</button>
       <button id="langToggle" class="lang-toggle" onclick="toggleLang()">EN</button>
       <button id="themeBtn" class="theme-toggle" onclick="toggleTheme()" title="Deep/Light theme">☀️</button>
     </div>
   </div>
   <div class="stats" id="topStats">加载中...</div>
+</div>
+
+<!-- 更新进度弹窗 -->
+<div id="updateModal" class="update-modal" style="display:none;">
+  <div class="update-modal-content">
+    <h3 data-i18n="update_title">📊 数据更新中</h3>
+    <div id="updateProgress" style="margin:12px 0;font-size:14px;color:#667;">准备中...</div>
+    <div id="updateLog" style="max-height:300px;overflow-y:auto;background:#1a1a2e;color:#0f0;padding:12px;border-radius:6px;font-size:12px;font-family:monospace;white-space:pre-wrap;"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+      <button id="updateCloseBtn" class="lang-toggle" style="display:none;" onclick="closeUpdateModal()" data-i18n="close">关闭</button>
+    </div>
+  </div>
 </div>
 
 <div class="tabs">
@@ -1238,53 +1251,61 @@ function baAxisCol() {
   const l = document.body.classList.contains('light');
   return { tick: l ? '#6a6a6f' : '#c6c6cc', grid: l ? 'rgba(0,0,0,0.09)' : 'rgba(255,255,255,0.09)', title: l ? '#3a3a3f' : '#e6e6ea' };
 }
+const DISP_BUCKETS = [
+  { label: '<150',      min: 0,    max: 149   },
+  { label: '150-250',   min: 150,  max: 249   },
+  { label: '250-400',   min: 250,  max: 399   },
+  { label: '400-600',   min: 400,  max: 599   },
+  { label: '600-800',   min: 600,  max: 799   },
+  { label: '800-1000',  min: 800,  max: 999   },
+  { label: '1000-1500', min: 1000, max: 1499  },
+  { label: '>1500',     min: 1500, max: 9999  }
+];
+function dispBucketIdx(disp) {
+  for (let i = 0; i < DISP_BUCKETS.length; i++)
+    if (disp >= DISP_BUCKETS[i].min && disp <= DISP_BUCKETS[i].max) return i;
+  return disp < DISP_BUCKETS[0].min ? 0 : DISP_BUCKETS.length - 1;
+}
 function baLayoutScatter(rows) {
   const map = {};
   rows.forEach(m => { const dd = extractDisp(m.good_name); if (!dd || !m.vehicle_type) return; (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd }); });
   const types = TYPES.filter(t => map[t] && map[t].length);
   const labels = types.map(t => tType(t));
+  const N_BUCKETS = DISP_BUCKETS.length;
+  const plotH = Math.min(2200, Math.max(560, N_BUCKETS * 70 + 40));
+  const bandH = plotH / N_BUCKETS;
+  let maxBucketCars = 1;
   const cols = types.map(t => {
-    const arr = map[t].slice().sort((a, b) => a.disp - b.disp);
+    const arr = (map[t] || []).slice().sort((a, b) => a.disp - b.disp);
     const gs = [];
     let cur = null;
     arr.forEach(c => { if (!cur || c.disp - cur.disp > 8) { cur = { cars: [] }; gs.push(cur); } cur.cars.push(c); });
-    gs.forEach(g => { g.rows = Math.ceil(g.cars.length / 5); });
+    gs.forEach(g => {
+      const byBucket = {};
+      g.cars.forEach(c => {
+        const bi = dispBucketIdx(c.disp);
+        (byBucket[bi] = byBucket[bi] || []).push(c);
+      });
+      Object.values(byBucket).forEach(arr => { if (arr.length > maxBucketCars) maxBucketCars = arr.length; });
+      g.bucketSlots = byBucket;
+    });
     return { t, gs };
   });
-  let rowsMax = 0, dispMax = 0;
-  cols.forEach(c => { let r = 0; c.gs.forEach(g => { r += g.rows; g.cars.forEach(x => { if (x.disp > dispMax) dispMax = x.disp; }); }); if (r > rowsMax) rowsMax = r; });
-  dispMax = Math.max(dispMax, 1);
-  const Ytop = Math.ceil(dispMax * 1.12 / 50) * 50;
-  let plotH = Math.min(2200, Math.max(560, rowsMax * 62 + 40));
-  let step = 62;
-  for (let pass = 0; pass < 6; pass++) {
-    step = 62;
-    let topUsed = 0;
-    cols.forEach(col => {
-      let cursor = 18;
-      col.gs.forEach(g => {
-        const blockH = g.rows * step;
-        const med = g.cars[Math.floor(g.cars.length / 2)].disp;
-        const anchor = med / Ytop * plotH;
-        let y0 = Math.max(anchor - blockH / 2, cursor);
-        if (y0 + blockH + 5 > plotH - 6) y0 = Math.max(cursor, plotH - blockH - 11);
-        g.y0 = y0;
-        cursor = y0 + blockH + 5;
-      });
-      if (cursor > topUsed) topUsed = cursor;
-    });
-    if (topUsed + 12 <= plotH) break;
-    plotH = Math.min(2200, Math.max(560, topUsed + 40));
-  }
   const pts = [];
-  cols.forEach(col => col.gs.forEach(g => {
-    g.cars.forEach((c, k) => {
-      const row = Math.floor(k / 5), s = k % 5;
-      const ypx = g.y0 + (row + 0.5) * step;
-      pts.push({ x: types.indexOf(col.t), y: ypx, _m: c.m, _s: s });
+  cols.forEach((col, ci) => {
+    col.gs.forEach(g => {
+      Object.entries(g.bucketSlots).forEach(([biStr, cars]) => {
+        const bi = parseInt(biStr);
+        const bucketMid = (bi + 0.5) * bandH;
+        cars.forEach((c, k) => {
+          const frac = maxBucketCars > 1 ? (k - (cars.length - 1) / 2) / maxBucketCars : 0;
+          const ypx = bucketMid + frac * bandH * 0.80;
+          pts.push({ x: types.indexOf(col.t), y: ypx, _m: c.m, _s: k, _bi: bi });
+        });
+      });
     });
-  }));
-  return { labels, pts, plotH, nCols: labels.length || 1, dispMax, Ytop, step };
+  });
+  return { labels, pts, plotH, nCols: labels.length || 1, bandH, maxBucketCars };
 }
 function baChartBox(boxId, cfg) {
   const box = document.getElementById(boxId);
@@ -1395,7 +1416,7 @@ function baDrawProd(rows) {
   const ac = baAxisCol();
   const ctx = document.getElementById('baProdChart').getContext('2d');
   if (chartBaProd) chartBaProd.destroy();
-  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: Math.max(1, Math.round(cfg.plotH / (cfg.Ytop / 50))), callback: v => Math.round(v / cfg.plotH * cfg.Ytop) }, grid: { color: ac.grid } } } } });
+  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量区间', 'Displacement'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < DISP_BUCKETS.length) ? DISP_BUCKETS[bi].label : ''; } }, grid: { color: ac.grid } } } });
   baAttachCards(ctx.canvas, () => chartBaProd, 'baProdPanel', 'baProdTitle', 'baProdGrid');
 }function baShowDetail(panelId,titleId,gridId,m) {
   const panel=document.getElementById(panelId);
@@ -1485,178 +1506,90 @@ function toggleLang() {
   }
 }
 
+// Init
+fillTypeSelects();
+applyI18n();
+loadTopStats();
+loadBrands();
+loadTab1();
 
-// ===================== 静态版：本地数据层（无后端，纯浏览器计算） =====================
-let DATA = null;
-const _realFetch = window.fetch.bind(window);
-window.fetch = async function(url, opts) {
-  if (typeof url === 'string' && url.indexOf('/api/') >= 0) return localFetch(url, opts);
-  return _realFetch(url, opts);
-};
-function _bucketDisp(d) {
-  if (d == null) return null;
-  if (d < 150) return '<150';
-  if (d < 250) return '150-250';
-  if (d < 400) return '250-400';
-  if (d < 600) return '400-600';
-  if (d < 800) return '600-800';
-  if (d < 1000) return '800-1000';
-  if (d < 1500) return '1000-1500';
-  return '>1500';
-}
-function _bucketPrice(p) {
-  if (p < 5000) return '<5000';
-  if (p < 10000) return '5000-10000';
-  if (p < 20000) return '10000-20000';
-  if (p < 50000) return '20000-50000';
-  if (p < 100000) return '50000-100000';
-  if (p < 200000) return '100000-200000';
-  return '>200000';
-}
-async function localFetch(url, opts) {
-  const path = url.split('?')[0];
-  const p = new URLSearchParams(url.indexOf('?') >= 0 ? url.slice(url.indexOf('?') + 1) : '');
-  const models = DATA.models;
-  const ok = (obj) => new Response(JSON.stringify(obj), { headers: { 'Content-Type': 'application/json' } });
-  if (path === '/api/stats') {
-    const priced = models.filter(m => m.min_price > 0);
-    const min_p = models.reduce((a, m) => Math.min(a, m.min_price || Infinity), Infinity);
-    const max_p = models.reduce((a, m) => Math.max(a, m.max_price || 0), 0);
-    const avg_p = priced.length ? Math.round(priced.reduce((a, m) => a + m.min_price, 0) / priced.length) : 0;
-    const types = {};
-    models.forEach(m => { const t = m.vehicle_type || '其他'; types[t] = (types[t] || 0) + 1; });
-    const typesArr = Object.keys(types).map(t => ({ type: t, count: types[t] })).sort((a, b) => b.count - a.count);
-    return ok({ total: models.length, priced: priced.length, min_price: isFinite(min_p) ? min_p : 0, max_price: max_p, avg_price: avg_p, brands: DATA.brands.length, types: typesArr });
-  }
-  if (path === '/api/brands') {
-    const q = (p.get('q') || '').trim(); const limit = parseInt(p.get('limit') || '500');
-    let rows = DATA.brands.map(b => {
-      const mc = models.filter(m => String(m.brand_id) === String(b.brand_id));
-      const prices = mc.map(m => m.min_price).filter(x => x > 0);
-      return { brand_id: b.brand_id, brand_name: b.brand_name, spelling: b.spelling, aleph: b.aleph, energy_type: b.energy_type, model_count: mc.length, min_price: prices.length ? Math.min.apply(null, prices) : 0, max_price: prices.length ? Math.max.apply(null, prices) : 0, avg_price: prices.length ? Math.round(prices.reduce((a, x) => a + x, 0) / prices.length) : 0 };
-    });
-    if (q) rows = rows.filter(r => (r.brand_name || '').includes(q) || (r.spelling || '').toLowerCase().includes(q.toLowerCase()));
-    rows.sort((a, b) => b.model_count - a.model_count);
-    return ok(rows.slice(0, limit));
-  }
-  if (path === '/api/models') {
-    const brand_id = p.get('brand_id') || '';
-    const vtype = p.get('type') || '';
-    const energy = p.get('energy') || '';
-    const min_price = p.get('min_price') || '';
-    const max_price = p.get('max_price') || '';
-    const keyword = p.get('keyword') || '';
-    const min_disp = p.get('min_disp') || '';
-    const max_disp = p.get('max_disp') || '';
-    const sort = p.get('sort') || 'price_asc';
-    let rows = models.slice();
-    if (brand_id) rows = rows.filter(r => String(r.brand_id) === String(brand_id));
-    if (vtype && vtype !== '不限') rows = rows.filter(r => r.vehicle_type === vtype);
-    if (energy && energy !== '不限') rows = rows.filter(r => r.energy_label === energy);
-    if (min_price) rows = rows.filter(r => r.min_price >= parseFloat(min_price));
-    if (max_price) rows = rows.filter(r => r.min_price <= parseFloat(max_price));
-    if (keyword) rows = rows.filter(r => (r.good_name || '').includes(keyword) || (r.series_name || '').includes(keyword));
-    if (sort === 'price_asc') rows.sort((a, b) => (a.min_price || 0) - (b.min_price || 0));
-    else if (sort === 'price_desc') rows.sort((a, b) => (b.min_price || 0) - (a.min_price || 0));
-    else if (sort === 'name') rows.sort((a, b) => (a.good_name || '').localeCompare(b.good_name || ''));
-    else rows.sort((a, b) => (a.min_price || 0) - (b.min_price || 0));
-    if (min_disp) rows = rows.filter(r => { const d = extractDisp(r.good_name); return d && d >= parseInt(min_disp); });
-    if (max_disp) rows = rows.filter(r => { const d = extractDisp(r.good_name); return d && d <= parseInt(max_disp); });
-    return ok({ total: rows.length, models: rows });
-  }
-  if (path === '/api/tab1-overview') {
-    const vtype = p.get('type') || ''; const energy = p.get('energy') || '';
-    const min_disp = p.get('min_disp') || ''; const max_disp = p.get('max_disp') || '';
-    let rows = models.slice();
-    if (vtype && vtype !== '不限') rows = rows.filter(r => r.vehicle_type === vtype);
-    if (energy && energy !== '不限') rows = rows.filter(r => r.energy_label === energy);
-    if (min_disp) rows = rows.filter(r => (extractDisp(r.good_name) || 0) >= parseInt(min_disp));
-    if (max_disp) rows = rows.filter(r => (extractDisp(r.good_name) || 0) <= parseInt(max_disp));
-    const buckets = ['<150', '150-250', '250-400', '400-600', '600-800', '800-1000', '1000-1500', '>1500'];
-    const counts = {}; buckets.forEach(k => counts[k] = 0);
-    rows.forEach(r => { const d = extractDisp(r.good_name); if (!d) return; counts[_bucketDisp(d)]++; });
-    const bc = {}; rows.forEach(r => { const b = r.brand_name; bc[b] = (bc[b] || 0) + 1; });
-    const top = Object.keys(bc).map(b => [b, bc[b]]).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    return ok({ disp: buckets.map(k => ({ range: k, count: counts[k] })), brands: top.map(x => ({ brand: x[0], count: x[1] })) });
-  }
-  if (path === '/api/price-matrix') {
-    const vtype = p.get('type') || ''; const energy = p.get('energy') || '';
-    const brand_id = p.get('brand_id') || ''; const min_disp = p.get('min_disp') || ''; const max_disp = p.get('max_disp') || '';
-    const ranges = [['<5K', 0, 5000], ['5K-1W', 5000, 10000], ['1W-2W', 10000, 20000], ['2W-5W', 20000, 50000], ['5W-10W', 50000, 100000], ['10W-20W', 100000, 200000], ['>20W', 200000, 9999999]];
-    let rows = models.slice();
-    if (vtype && vtype !== '不限') rows = rows.filter(r => r.vehicle_type === vtype);
-    if (energy && energy !== '不限') rows = rows.filter(r => r.energy_label === energy);
-    if (brand_id) rows = rows.filter(r => String(r.brand_id) === String(brand_id));
-    const filtered = rows.filter(r => { const d = extractDisp(r.good_name); if (min_disp && (!d || d < parseInt(min_disp))) return false; if (max_disp && (!d || d > parseInt(max_disp))) return false; return true; });
-    const matrix = {}; const brand_totals = {}; const range_totals = {};
-    ranges.forEach(([rl]) => range_totals[rl] = 0);
-    filtered.forEach(r => {
-      const brand = r.brand_name; const pr = r.min_price;
-      for (const [rl, lo, hi] of ranges) {
-        if (lo <= pr && pr < hi) {
-          if (!matrix[brand]) { matrix[brand] = {}; ranges.forEach(([x]) => matrix[brand][x] = 0); matrix[brand]._total = 0; matrix[brand]._models = {}; }
-          matrix[brand][rl]++; matrix[brand]._total++; brand_totals[brand] = (brand_totals[brand] || 0) + 1; range_totals[rl]++;
-          if (!matrix[brand]._models[rl]) matrix[brand]._models[rl] = [];
-          if (matrix[brand]._models[rl].length < 20) matrix[brand]._models[rl].push({ name: r.good_name, price: pr, type: r.vehicle_type });
-          break;
-        }
-      }
-    });
-    const top_brands = Object.keys(brand_totals).map(b => [b, brand_totals[b]]).sort((a, b) => b[1] - a[1]).slice(0, 30);
-    const result = { price_ranges: ranges.map(x => x[0]), brands: top_brands.map(x => x[0]), matrix: [], range_totals: ranges.map(x => range_totals[x[0]]) };
-    top_brands.forEach(([b]) => { result.matrix.push({ brand: b, total: matrix[b]._total, cells: ranges.map(x => matrix[b][x[0]]), models: matrix[b]._models }); });
-    return ok(result);
-  }
-  if (path === '/api/type-stats') {
-    const types = {}; models.forEach(m => { const t = m.vehicle_type || '其他'; types[t] = (types[t] || 0) + 1; });
-    const rows = Object.keys(types).map(t => { const mc = models.filter(m => m.vehicle_type === t); const prices = mc.map(m => m.min_price).filter(x => x > 0); return { type: t, count: types[t], min_p: prices.length ? Math.min.apply(null, prices) : 0, max_p: mc.map(m => m.max_price || 0).reduce((a, x) => Math.max(a, x), 0), avg_p: prices.length ? Math.round(prices.reduce((a, x) => a + x, 0) / prices.length) : 0 }; }).sort((a, b) => b.count - a.count);
-    return ok(rows);
-  }
-  if (path === '/api/disp-dist') {
-    const vtype = p.get('type') || '';
-    let rows = models.slice();
-    if (vtype && vtype !== '全部') rows = rows.filter(r => r.vehicle_type === vtype);
-    const buckets = ['<150', '150-250', '250-400', '400-600', '600-800', '800-1000', '1000-1500', '>1500'];
-    const counts = {}; const prices = {}; const mbb = {};
-    buckets.forEach(k => { counts[k] = 0; prices[k] = []; mbb[k] = []; });
-    rows.forEach(r => { const d = extractDisp(r.good_name); if (d == null) return; const k = _bucketDisp(d); counts[k]++; prices[k].push(r.min_price); mbb[k].push({ name: r.good_name, price: r.min_price, type: r.vehicle_type }); });
-    return ok(buckets.map(k => ({ range: k, count: counts[k], avg_price: prices[k].length ? Math.round(prices[k].reduce((a, x) => a + x, 0) / prices[k].length) : 0, models: mbb[k].slice(0, 50) })));
-  }
-  if (path === '/api/price-dist') {
-    const vtype = p.get('type') || '';
-    let rows = models.slice();
-    if (vtype && vtype !== '全部') rows = rows.filter(r => r.vehicle_type === vtype);
-    const buckets = ['<5000', '5000-10000', '10000-20000', '20000-50000', '50000-100000', '100000-200000', '>200000'];
-    const counts = {}; const mbb = {};
-    buckets.forEach(k => { counts[k] = 0; mbb[k] = []; });
-    rows.forEach(r => { const k = _bucketPrice(r.min_price); counts[k]++; mbb[k].push({ name: r.good_name, price: r.min_price, type: r.vehicle_type, brand: r.brand_name }); });
-    return ok(buckets.map(k => ({ range: k, count: counts[k], models: mbb[k].slice(0, 50) })));
-  }
-  if (path === '/api/scatter') {
-    const points = [];
-    models.forEach(r => { const d = extractDisp(r.good_name); if (d && r.min_price) points.push({ x: d, y: r.min_price, type: r.vehicle_type, name: r.good_name, brand: r.brand_name, max_price: r.max_price, series: r.series_name, energy: r.energy_label, pic: r.good_pic || '' }); });
-    return ok(points);
-  }
-  return ok({ error: 'unknown endpoint ' + path });
-}
-
-// // Init (静态版：先加载 data.json)
-(async function() {
+// ===================== 数据更新 =====================
+let _updatePollTimer = null;
+async function triggerUpdate() {
+  if(!confirm(LANG==='en' ? 'Update data from 58moto.com?\nThis may take 3-10 minutes.' : '从 58moto.com 更新数据？\n可能需要 3-10 分钟。')) return;
+  
+  const btn = document.getElementById('updateBtn');
+  btn.disabled = true;
+  btn.textContent = t('update_running_btn');
+  
+  const modal = document.getElementById('updateModal');
+  const progress = document.getElementById('updateProgress');
+  const log = document.getElementById('updateLog');
+  const closeBtn = document.getElementById('updateCloseBtn');
+  closeBtn.style.display = 'none';
+  log.textContent = '';
+  progress.textContent = t('update_starting');
+  modal.style.display = 'flex';
+  
   try {
-    const resp = await _realFetch('./data.json');
-    DATA = await resp.json();
+    const r = await fetch('/api/update', {method:'POST'});
+    const d = await r.json();
+    if(d.status === 'already_running') {
+      progress.textContent = LANG==='en' ? 'Update already in progress...' : '更新正在进行中...';
+    }
+    // 开始轮询
+    _updatePollTimer = setInterval(pollUpdate, 1000);
   } catch(e) {
-    document.getElementById('topStats').textContent = '数据加载失败，请确认 data.json 与 index.html 在同一目录';
-    console.error('load data.json failed', e);
-    return;
+    progress.textContent = t('update_failed') + ': ' + e.message;
+    closeBtn.style.display = 'inline-block';
+    btn.disabled = false;
+    btn.textContent = t('update_btn');
   }
-  fillTypeSelects();
-  applyI18n();
-  loadTopStats();
-  loadBrands();
-  loadTab1();
-})();
+}
 
+async function pollUpdate() {
+  try {
+    const r = await fetch('/api/update/status');
+    const d = await r.json();
+    
+    const progress = document.getElementById('updateProgress');
+    const log = document.getElementById('updateLog');
+    const closeBtn = document.getElementById('updateCloseBtn');
+    const btn = document.getElementById('updateBtn');
+    
+    // 显示最新日志
+    if(d.log && d.log.length) {
+      log.textContent = d.log.join('\n');
+      log.scrollTop = log.scrollHeight;
+    }
+    
+    if(d.done) {
+      clearInterval(_updatePollTimer);
+      _updatePollTimer = null;
+      progress.textContent = t('update_done');
+      closeBtn.style.display = 'inline-block';
+      btn.disabled = false;
+      btn.textContent = t('update_btn');
+      // 3秒后自动刷新页面
+      setTimeout(() => location.reload(), 3000);
+    } else if(d.error && !d.running) {
+      clearInterval(_updatePollTimer);
+      _updatePollTimer = null;
+      progress.textContent = t('update_failed') + ': ' + d.error;
+      closeBtn.style.display = 'inline-block';
+      btn.disabled = false;
+      btn.textContent = t('update_btn');
+    } else {
+      progress.textContent = t('update_running') + ' (' + d.elapsed + 's)';
+    }
+  } catch(e) {
+    // 网络错误，继续重试
+  }
+}
+
+function closeUpdateModal() {
+  document.getElementById('updateModal').style.display = 'none';
+}
 </script>
 </body>
 </html>
