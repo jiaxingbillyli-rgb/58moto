@@ -441,7 +441,7 @@ img[src*="/cut/"]{background:#fff;}
 <div class="panel" id="panel-brandanalysis">
   <div class="filter-bar">
     <label data-i18n="lbl_brand">品牌</label>
-    <select id="baBrandSel" onchange="loadBaTab()"></select> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
+    <select id="baBrandSel" onchange="loadBaTab()"></select> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
     <label data-i18n="lbl_energy">能源</label>
     <select id="baEnergySel" onchange="loadBaTab()">
       <option value="" data-i18n="opt_all">不限</option>
@@ -482,7 +482,7 @@ img[src*="/cut/"]{background:#fff;}
       </select>
       <input id="cmpDispMin" type="number" min="0" max="9999" placeholder="排量 ≥" title="最小排量 cc" style="width:70px">
       <input id="cmpDispMax" type="number" min="0" max="9999" placeholder="排量 ≤" title="最大排量 cc" style="width:70px">
-      <button class="btn btn-primary" onclick="loadBaCompare()" data-i18n="ba_cmp_btn">生成对比图</button>
+      <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel2" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label> <button class="btn btn-primary" onclick="loadBaCompare()" data-i18n="ba_cmp_btn">生成对比图</button>
     </div>
     <div id="baCmpHint" style="color:#e94560;font-size:12px;margin:2px 0 6px;" data-i18n="ba_cmp_hint">请选择 2-4 个品牌后点击「生成对比图」</div>
     <div class="ba-hscroll"><div class="ba-chart-box" id="baCmpBox"><canvas id="baCmpChart" height="120"></canvas></div></div>
@@ -1256,7 +1256,9 @@ function baLayoutScatter(rows) {
   const buckets = [];
   for (let lo = yMin; lo < yMax - 1e-6; lo += step) { const hi = Math.min(lo + step, yMax); buckets.push({ min: lo, max: hi, label: (lo === yMin ? (lo + '~' + hi) : (lo + '-' + hi)) }); }
   const N_BUCKETS = buckets.length;
-  const bandH = baGeo().bandH;
+  const geo0 = baGeo();
+  const bandH = geo0.bandH;
+  const slot = geo0.slot, cw = geo0.cw, pad = geo0.pad;
   let maxBucketCars = 1;
   const cols = types.map(t => {
     const arr = (map[t] || []).slice().sort((a, b) => a.disp - b.disp);
@@ -1265,6 +1267,15 @@ function baLayoutScatter(rows) {
     Object.values(byBucket).forEach(arr2 => { if (arr2.length > maxBucketCars) maxBucketCars = arr2.length; arr2.forEach((c, k) => { c._lane = k; c._n = arr2.length; }); });
     return { t, byBucket };
   });
+  // ---- 按列车型数比例伸缩列宽：车越多的类型，列越宽 ----
+  const colCarCounts = cols.map(col => Object.values(col.byBucket).reduce((s, a) => s + a.length, 0));
+  const minColW = cw + 2 * pad + slot; // 最小宽度 = 1 张卡片 + 间距 + 边距
+  const colWidths = colCarCounts.map(n => Math.max(n * slot + cw + 2 * pad, minColW));
+  const colCenters = [];
+  let cumX = 0;
+  for (let i = 0; i < colWidths.length; i++) { colCenters.push(cumX + colWidths[i] / 2); cumX += colWidths[i]; }
+  const totalWidth = cumX;
+  // ---- 用列中心作为点的 x（保留 _xoff 做横向车道偏移）----
   const pts = [];
   cols.forEach((col, ci) => {
     Object.entries(col.byBucket).forEach(([biStr, cars]) => {
@@ -1272,17 +1283,18 @@ function baLayoutScatter(rows) {
       const bucketMid = (bi + 0.5) * bandH;
       const n = cars.length;
       cars.forEach((c, k) => {
-        const ypx = bucketMid; // 同桶内全部在同一行（桶中线），仅靠横向车道分隔，避免跨桶纵向重叠
+        const ypx = bucketMid;
         const xoff = k - (n - 1) / 2;
-        pts.push({ x: ci, y: ypx, _m: c.m, _s: k, _n: n, _xoff: xoff, _bi: bi });
+        pts.push({ x: colCenters[ci], y: ypx, _m: c.m, _s: k, _n: n, _xoff: xoff, _bi: bi, _ci: ci });
       });
     });
   });
   const plotH = N_BUCKETS * bandH + 40;
-  return { labels, pts, nCols: labels.length || 1, buckets, yMin, yMax, bandH, plotH, maxBucketCars, step };
+  return { labels, pts, nCols: labels.length || 1, buckets, yMin, yMax, bandH, plotH, maxBucketCars, step, colCarCounts, colWidths, colCenters, totalWidth };
 }
 function baSetScale(s) {
   window.__BA_SCALE = parseInt(s) || 2;
+  ['baScaleSel', 'baScaleSel2'].forEach(id => { const e = document.getElementById(id); if (e && e.value !== String(window.__BA_SCALE)) e.value = String(window.__BA_SCALE); });
   if (typeof loadBaTab === 'function') loadBaTab();
   if (typeof loadBaCompare === 'function') loadBaCompare();
 }
@@ -1290,12 +1302,9 @@ function baChartBox(boxId, cfg) {
   const box = document.getElementById(boxId);
   if (!box) return null;
   const geo = baGeo();
-  const base = Math.max(420, (box.parentElement ? box.parentElement.clientWidth : 1200) || 1200);
-  const colW = Math.max(Math.round(base / cfg.nCols), cfg.maxBucketCars * geo.slot + geo.cw + 2 * geo.pad);
-  const boxW = Math.max(base, cfg.nCols * colW + 60);
-  box.style.width = Math.round(boxW) + 'px';
+  box.style.width = Math.round(cfg.totalWidth + 60) + 'px';
   box.style.height = Math.round(cfg.plotH + 60) + 'px';
-  cfg.geo = { cw: geo.cw, ch: geo.ch, slot: geo.slot, nameH: geo.nameH, fontPx: geo.fontPx, cardH: geo.cardH, pad: geo.pad, bandH: cfg.bandH, maxLane: cfg.maxBucketCars };
+  cfg.geo = { cw: geo.cw, ch: geo.ch, slot: geo.slot, nameH: geo.nameH, fontPx: geo.fontPx, cardH: geo.cardH, pad: geo.pad, bandH: cfg.bandH };
   return cfg;
 }
 
@@ -1391,7 +1400,7 @@ function baDrawProd(rows) {
   const ac = baAxisCol();
   const ctx = document.getElementById('baProdChart').getContext('2d');
   if (chartBaProd) chartBaProd.destroy();
-  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
+  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: 0, max: cfg.totalWidth, ticks: { autoSkip: false, includeBounds: false, color: ac.tick, font: { size: 12 }, callback: function(v) { const idx = cfg.colCenters.indexOf(v); return idx >= 0 ? cfg.labels[idx] : ''; } }, afterBuildTicks: function(axis) { axis.ticks = (cfg.colCenters || []).map(c => ({ value: c })); }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
   baAttachCards(ctx.canvas, () => chartBaProd, 'baProdPanel', 'baProdTitle', 'baProdGrid');
 }function baShowDetail(panelId,titleId,gridId,m) {
   const panel=document.getElementById(panelId);
@@ -1440,7 +1449,7 @@ async function loadBaCompare() {
   const ac = baAxisCol();
   const ctx = document.getElementById('baCmpChart').getContext('2d');
   if (chartBaCmp) chartBaCmp.destroy();
-  chartBaCmp = new Chart(ctx, { type: 'scatter', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: true, labels: { boxWidth: 12, font: { size: 11 }, color: ac.tick } }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
+  chartBaCmp = new Chart(ctx, { type: 'scatter', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: true, labels: { boxWidth: 12, font: { size: 11 }, color: ac.tick } }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: 0, max: cfg.totalWidth, ticks: { autoSkip: false, includeBounds: false, color: ac.tick, font: { size: 12 }, callback: function(v) { const idx = cfg.colCenters.indexOf(v); return idx >= 0 ? cfg.labels[idx] : ''; } }, afterBuildTicks: function(axis) { axis.ticks = (cfg.colCenters || []).map(c => ({ value: c })); }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
   baAttachCards(ctx.canvas, () => chartBaCmp, 'baCmpPanel', 'baCmpTitle', 'baCmpGrid');
 }
 
