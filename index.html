@@ -441,7 +441,7 @@ img[src*="/cut/"]{background:#fff;}
 <div class="panel" id="panel-brandanalysis">
   <div class="filter-bar">
     <label data-i18n="lbl_brand">品牌</label>
-    <select id="baBrandSel" onchange="loadBaTab()"></select>
+    <select id="baBrandSel" onchange="loadBaTab()"></select> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
     <label data-i18n="lbl_energy">能源</label>
     <select id="baEnergySel" onchange="loadBaTab()">
       <option value="" data-i18n="opt_all">不限</option>
@@ -1150,28 +1150,27 @@ const baCardPlugin = {
     const ca = chart.chartArea, xS = chart.scales.x, yS = chart.scales.y;
     if (!ca || !xS || !yS) return;
     const cw = opts.cw || 44, ch = opts.ch || 54, slot = opts.slot || 52;
+    const nameH = opts.nameH || 16, cardH = opts.cardH || (ch + nameH), pad = opts.pad || 4, fontPx0 = opts.fontPx || 10;
     const ctx = chart.ctx;
     ctx.save();
     const cards = [];
-    const multi = chart.data.datasets.length > 1;
     const light = document.body.classList.contains('light');
     chart.data.datasets.forEach((ds, dsi) => {
-      const lbl = multi ? (ds.label || '') : '';
       (ds.data || []).forEach((raw, ii) => {
         const m = raw && raw._m; if (!m) return;
-        const cx = xS.getPixelForValue(raw.x) + (((raw._s == null ? 0 : raw._s) - 2) * slot);
+        const cx = xS.getPixelForValue(raw.x) + ((raw._xoff == null ? 0 : raw._xoff) * slot);
         const cy = yS.getPixelForValue(raw.y);
-        cards.push({ cx, cy, dsi, ii, m, dsLabel: lbl });
+        cards.push({ cx, cy, dsi, ii, m });
       });
     });
-    const ih = ch - 6;
-    const fontPx = Math.max(12, Math.round(ch * 0.16));
+    const ih = ch;
     cards.forEach(c => {
-      const x0 = Math.round(c.cx - cw / 2), y0 = Math.round(c.cy - ch / 2);
-      const bcol = multi ? ((chart.data.datasets[c.dsi] || {}).borderColor || '#888')
-        : (light ? '#5a5a60' : 'rgba(255,255,255,0.45)');
+      const x0 = Math.round(c.cx - cw / 2), y0 = Math.round(c.cy - cardH / 2);
       const key = baImgUrl(c.m);
       const img = key ? baImgCache[key] : null;
+      // white card background
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x0, y0, cw, cardH);
       if (img && img !== 'loading' && img.complete && img.naturalWidth > 0) {
         const bb = baImgContentBounds(img);
         const ir = bb.sw / bb.sh;
@@ -1179,34 +1178,35 @@ const baCardPlugin = {
         if (ir > cw / ih) { dw = cw; dh = cw / ir; } else { dh = ih; dw = ih * ir; }
         const dx = x0 + (cw - dw) / 2, dy = y0 + (ih - dh) / 2;
         ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, cw, ih); ctx.clip();
-        ctx.fillStyle = '#fff'; ctx.fillRect(x0, y0, cw, ih);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, bb.sx, bb.sy, bb.sw, bb.sh, dx, dy, dw, dh);
         ctx.restore();
       } else {
-        ctx.fillStyle = '#fff';
+        ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, cw, ih); ctx.clip();
+        ctx.fillStyle = light ? '#f0f0f2' : '#2b2b2b';
         ctx.fillRect(x0, y0, cw, ih);
-        ctx.fillStyle = light ? '#666' : '#999';
-        ctx.font = Math.max(10, Math.round(ch * 0.42)) + 'px sans-serif';
+        ctx.fillStyle = light ? '#999' : '#bbb';
+        ctx.font = Math.max(10, Math.round(ih * 0.4)) + 'px sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText((c.m.good_name || '?').charAt(0), c.cx, y0 + ih / 2);
+        ctx.restore();
       }
-      ctx.fillStyle = '#000';
-      ctx.font = 'bold ' + fontPx + 'px sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // name strip: white bg + bold black, auto-shrink font so the full text always fits (no ellipsis)
+      const ny0 = y0 + ih;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x0, ny0, cw, cardH - ih);
       let nm = c.m.good_name || '';
-      if (ctx.measureText(nm).width > cw - 1) {
-        while (nm.length > 1 && ctx.measureText(nm + '…').width > cw - 1) nm = nm.slice(0, -1);
-        nm += '…';
-      }
-      ctx.fillText(nm, c.cx, y0 + ch - 3);
-      
+      let fpx = fontPx0;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold ' + fpx + 'px sans-serif';
+      while (fpx > 6 && ctx.measureText(nm).width > cw - 2 * pad) { fpx -= 1; ctx.font = 'bold ' + fpx + 'px sans-serif'; }
+      ctx.fillStyle = '#000';
+      ctx.fillText(nm, c.cx, ny0 + (cardH - ih) / 2);
     });
     ctx.restore();
-    cards.__w = cw; cards.__h = ch;
-    chart.__baCards = cards;
-    chart.__baCardSize = { w: cw, h: ch };
+    cards.__w = cw; cards.__h = cardH;
+    chart.__baCardSize = { w: cw, h: cardH };
   }
 };
 Chart.register(baCardPlugin);
@@ -1230,61 +1230,73 @@ function dispBucketIdx(disp) {
     if (disp >= DISP_BUCKETS[i].min && disp <= DISP_BUCKETS[i].max) return i;
   return disp < DISP_BUCKETS[0].min ? 0 : DISP_BUCKETS.length - 1;
 }
+function baGeo() {
+  const S = (typeof window !== 'undefined' && window.__BA_SCALE) || 2;
+  const slot = 56 * S;
+  const gap = 6 * S;
+  const cw = slot - gap;
+  const ch = cw;
+  const fontPx = 10 * S;
+  const nameH = fontPx + 6 * S;
+  const pad = 4 * S;
+  const cardH = ch + nameH + pad;
+  const bandH = cardH + 14 * S;
+  return { S, slot, gap, cw, ch, fontPx, nameH, pad, cardH, bandH };
+}
 function baLayoutScatter(rows) {
   const map = {};
-  rows.forEach(m => { const dd = extractDisp(m.good_name); if (!dd || !m.vehicle_type) return; (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd }); });
+  let minD = Infinity, maxD = -Infinity;
+  rows.forEach(m => { const dd = extractDisp(m.good_name); if (!dd || !m.vehicle_type) return; (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd }); if (dd < minD) minD = dd; if (dd > maxD) maxD = dd; });
+  if (!isFinite(minD)) { minD = 0; maxD = 100; }
+  const yMin = Math.max(0, minD - 50), yMax = maxD + 50;
   const types = TYPES.filter(t => map[t] && map[t].length);
   const labels = types.map(t => tType(t));
-  const N_BUCKETS = DISP_BUCKETS.length;
-  const plotH = Math.min(4400, Math.max(1120, N_BUCKETS * 140 + 80));
-  const bandH = plotH / N_BUCKETS;
+  const span = yMax - yMin;
+  let step = Math.max(50, Math.ceil((span / 8) / 50) * 50);
+  const buckets = [];
+  for (let lo = yMin; lo < yMax - 1e-6; lo += step) { const hi = Math.min(lo + step, yMax); buckets.push({ min: lo, max: hi, label: (lo === yMin ? (lo + '~' + hi) : (lo + '-' + hi)) }); }
+  const N_BUCKETS = buckets.length;
+  const bandH = baGeo().bandH;
   let maxBucketCars = 1;
   const cols = types.map(t => {
     const arr = (map[t] || []).slice().sort((a, b) => a.disp - b.disp);
-    const gs = [];
-    let cur = null;
-    arr.forEach(c => { if (!cur || c.disp - cur.disp > 8) { cur = { cars: [] }; gs.push(cur); } cur.cars.push(c); });
-    gs.forEach(g => {
-      const byBucket = {};
-      g.cars.forEach(c => {
-        const bi = dispBucketIdx(c.disp);
-        (byBucket[bi] = byBucket[bi] || []).push(c);
-      });
-      Object.values(byBucket).forEach(arr => { if (arr.length > maxBucketCars) maxBucketCars = arr.length; });
-      g.bucketSlots = byBucket;
-    });
-    return { t, gs };
+    const byBucket = {};
+    arr.forEach(c => { let bi = buckets.findIndex(b => c.disp >= b.min && c.disp < b.max); if (bi < 0) bi = N_BUCKETS - 1; (byBucket[bi] = byBucket[bi] || []).push(c); });
+    Object.values(byBucket).forEach(arr2 => { if (arr2.length > maxBucketCars) maxBucketCars = arr2.length; arr2.forEach((c, k) => { c._lane = k; c._n = arr2.length; }); });
+    return { t, byBucket };
   });
   const pts = [];
   cols.forEach((col, ci) => {
-    col.gs.forEach(g => {
-      Object.entries(g.bucketSlots).forEach(([biStr, cars]) => {
-        const bi = parseInt(biStr);
-        const bucketMid = (bi + 0.5) * bandH;
-        cars.forEach((c, k) => {
-          const frac = maxBucketCars > 1 ? (k - (cars.length - 1) / 2) / maxBucketCars : 0;
-          const ypx = bucketMid + frac * bandH * 0.80;
-          pts.push({ x: types.indexOf(col.t), y: ypx, _m: c.m, _s: k, _bi: bi });
-        });
+    Object.entries(col.byBucket).forEach(([biStr, cars]) => {
+      const bi = parseInt(biStr);
+      const bucketMid = (bi + 0.5) * bandH;
+      const n = cars.length;
+      cars.forEach((c, k) => {
+        const frac = n > 1 ? (k - (n - 1) / 2) / n : 0;
+        const ypx = bucketMid + frac * bandH * 0.70;
+        const xoff = k - (n - 1) / 2;
+        pts.push({ x: ci, y: ypx, _m: c.m, _s: k, _n: n, _xoff: xoff, _bi: bi });
       });
     });
   });
-  return { labels, pts, plotH, nCols: labels.length || 1, bandH, maxBucketCars };
+  const plotH = N_BUCKETS * bandH + 40;
+  return { labels, pts, nCols: labels.length || 1, buckets, yMin, yMax, bandH, plotH, maxBucketCars, step };
 }
-const BA_SCALE = 2;
+function baSetScale(s) {
+  window.__BA_SCALE = parseInt(s) || 2;
+  if (typeof loadBaTab === 'function') loadBaTab();
+  if (typeof loadBaCompare === 'function') loadBaCompare();
+}
 function baChartBox(boxId, cfg) {
   const box = document.getElementById(boxId);
   if (!box) return null;
+  const geo = baGeo();
   const base = Math.max(420, (box.parentElement ? box.parentElement.clientWidth : 1200) || 1200);
-  const needW = cfg.nCols * 300 * BA_SCALE + 60 * BA_SCALE;
-  const boxW = Math.max(base, needW);
-  const colW = boxW / cfg.nCols;
-  const slot = Math.min(64 * BA_SCALE, Math.max(30 * BA_SCALE, (colW - 24 * BA_SCALE) / 5));
-  const cw = Math.max(20 * BA_SCALE, Math.round(slot - 8 * BA_SCALE));
-  const ch = Math.max(12 * BA_SCALE, ((cfg.step != null ? cfg.step * BA_SCALE : cfg.bandH)) - 8 * BA_SCALE);
+  const colW = Math.max(Math.round(base / cfg.nCols), cfg.maxBucketCars * geo.slot + geo.cw + 2 * geo.pad);
+  const boxW = Math.max(base, cfg.nCols * colW + 60);
   box.style.width = Math.round(boxW) + 'px';
-  box.style.height = Math.round(cfg.plotH + 175 * BA_SCALE) + 'px';
-  cfg.geo = { cw, ch, slot };
+  box.style.height = Math.round(cfg.plotH + 60) + 'px';
+  cfg.geo = { cw: geo.cw, ch: geo.ch, slot: geo.slot, nameH: geo.nameH, fontPx: geo.fontPx, cardH: geo.cardH, pad: geo.pad, bandH: cfg.bandH, maxLane: cfg.maxBucketCars };
   return cfg;
 }
 
@@ -1380,7 +1392,7 @@ function baDrawProd(rows) {
   const ac = baAxisCol();
   const ctx = document.getElementById('baProdChart').getContext('2d');
   if (chartBaProd) chartBaProd.destroy();
-  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量区间', 'Displacement'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < DISP_BUCKETS.length) ? DISP_BUCKETS[bi].label : ''; } }, grid: { color: ac.grid } } } } });
+  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
   baAttachCards(ctx.canvas, () => chartBaProd, 'baProdPanel', 'baProdTitle', 'baProdGrid');
 }function baShowDetail(panelId,titleId,gridId,m) {
   const panel=document.getElementById(panelId);
@@ -1429,7 +1441,7 @@ async function loadBaCompare() {
   const ac = baAxisCol();
   const ctx = document.getElementById('baCmpChart').getContext('2d');
   if (chartBaCmp) chartBaCmp.destroy();
-  chartBaCmp = new Chart(ctx, { type: 'scatter', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: true, labels: { boxWidth: 12, font: { size: 11 }, color: ac.tick } }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: Math.max(1, Math.round(cfg.plotH / (cfg.Ytop / 50))), callback: v => Math.round(v / cfg.plotH * cfg.Ytop) }, grid: { color: ac.grid } } } } });
+  chartBaCmp = new Chart(ctx, { type: 'scatter', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: true, labels: { boxWidth: 12, font: { size: 11 }, color: ac.tick } }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: -0.6, max: cfg.nCols - 0.4, ticks: { stepSize: 1, autoSkip: false, color: ac.tick, font: { size: 12 }, callback: v => (v >= 0 && v < cfg.nCols && Math.abs(v - Math.round(v)) < 0.01) ? cfg.labels[Math.round(v)] : '' }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
   baAttachCards(ctx.canvas, () => chartBaCmp, 'baCmpPanel', 'baCmpTitle', 'baCmpGrid');
 }
 
