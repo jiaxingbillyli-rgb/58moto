@@ -441,7 +441,7 @@ img[src*="/cut/"]{background:#fff;}
 <div class="panel" id="panel-brandanalysis">
   <div class="filter-bar">
     <label data-i18n="lbl_brand">品牌</label>
-    <select id="baBrandSel" onchange="loadBaTab()"></select> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
+    <select id="baBrandSel" onchange="loadBaTab()"></select> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label> <label class="ba-scale-label" style="margin-left:10px">图片大小<select id="baScaleSel" onchange="baSetScale(this.value)"><option value="1">1x</option><option value="2" selected>2x</option><option value="3">3x</option><option value="4">4x</option></select></label>
     <label data-i18n="lbl_energy">能源</label>
     <select id="baEnergySel" onchange="loadBaTab()">
       <option value="" data-i18n="opt_all">不限</option>
@@ -1272,8 +1272,7 @@ function baLayoutScatter(rows) {
       const bucketMid = (bi + 0.5) * bandH;
       const n = cars.length;
       cars.forEach((c, k) => {
-        const frac = n > 1 ? (k - (n - 1) / 2) / n : 0;
-        const ypx = bucketMid + frac * bandH * 0.70;
+        const ypx = bucketMid; // 同桶内全部在同一行（桶中线），仅靠横向车道分隔，避免跨桶纵向重叠
         const xoff = k - (n - 1) / 2;
         pts.push({ x: ci, y: ypx, _m: c.m, _s: k, _n: n, _xoff: xoff, _bi: bi });
       });
