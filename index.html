@@ -448,8 +448,8 @@ img[src*="/cut/"]{background:#fff;}
       <option value="燃油" data-i18n="opt_fuel">燃油</option>
       <option value="电动" data-i18n="opt_elec">电动</option>
     </select>
-    <button id="baCutBtn" class="btn btn-primary" onclick="baCutToggle()" data-i18n="ba_cut_btn" style="margin-left:8px;padding:3px 10px;font-size:12px;">✂️ 抠图</button>
-    <span id="baCutState" style="font-size:12px;color:#999;margin-left:6px;"></span>
+    
+    
   </div>
   <div class="chart-container">
     <h3 data-i18n="ba_price_title">① 价格分布（售价 K CNY）</h3>
@@ -1074,92 +1074,13 @@ function baPhotoHTML(m, dsLabel) {
     '<div style="color:#888;font-size:11px;">' + (extractDisp(m.good_name) || '-') + 'cc</div></div></div>';
 }
 function hdUrl(u) { return u ? u.replace('!official300', '!official600') : u; }
-// ---- AI 抠图：浏览到的照片按需去背景（imgly isnet_fp16），完成后 img 换源自动重绘 ----
-const baCut = { on: true, inflight: 0, queue: [], queued: {}, done: {}, mod: null, total: 0, fin: 0, modTry: false };
-function baCutToggle() {
-  baCut.on = !baCut.on;
-  if (!baCut.on) baCut.queue.length = 0;
-  baCutRefresh();
-  if (baCut.on) baCutPump();
-}
-function baCutRefresh() {
-  const el = document.getElementById('baCutState');
-  if (el) {
-    if (!baCut.on) el.textContent = ' ' + t('ba_cut_off');
-    else if (!baCut.mod) el.textContent = ' ' + t('ba_cut_loading');
-    else if (baCut.fin > 0) el.textContent = ' ' + t('ba_cut_on') + ' ' + baCut.fin + '/' + baCut.total;
-  }
-  const b = document.getElementById('baCutBtn');
-  if (b) b.classList.toggle('btn-off', !baCut.on);
-}
-function baCutWarm() {
-  if (!baCut.on || baCut.mod || baCut.modTry) return;
-  baCut.modTry = true; baCutRefresh();
-  import('./lib/imgly_bundle.mjs').then(m => {
-    baCut.mod = m;
-    if (m.preload) { m.preload({ model: 'isnet_fp16' }).catch(e => console.log('PRELOAD-FAIL', e.message)); }
-    baCutRefresh();
-  }).catch(e => { baCut.modTry = false; baCutRefresh(); console.log('WARM-ERR', e.message); });
-}
-function baCutEnsure(u) {
-  if (!baCut.on || !u || (baCut.done[u] && baCut.done[u] !== 1) || baCut.queued[u]) return;
-  baCut.queued[u] = 1; baCut.total++;
-  baCut.queue.push(u); baCutRefresh(); baCutPump();
-}
-function baCutPump() {
-  while (baCut.on && baCut.inflight < 2 && baCut.queue.length) {
-    const u = baCut.queue.shift(); baCut.inflight++;
-    baCutWork(u).finally(() => { baCut.inflight--; baCutPump(); });
-  }
-}
-async function baCutWork(u) {
-  try {
-    if (!baCut.mod) {
-      if (!baCut.modTry) {
-        baCut.modTry = true; baCutRefresh();
-        try {
-          baCut.mod = await import('./lib/imgly_bundle.mjs');
-        } catch (e2) {
-          console.log('CUT-IMPORT-ERR', e2.message);
-          baCut.modTry = false;
-          baCutRefresh();
-          throw e2;
-        }
-        baCutRefresh();
-      } else {
-        for (let w = 0; w < 90 && !baCut.mod; w++) await new Promise(r2 => setTimeout(r2, 300));
-        if (!baCut.mod) throw new Error('bundle unavailable');
-      }
-    }
-    const blob = await baCut.mod.removeBackground(u, { model: 'isnet_fp16', proxyToWorker: true });
-    const burl = URL.createObjectURL(blob);
-    baCut.done[u] = burl; baCut.fin++;
-    const el = baImgCache[u];
-    if (el instanceof HTMLImageElement) { el.src = burl; }
-    console.log('CUT-OK', Math.round(blob.size / 1024) + 'KB');
-  } catch (e) {
-    if (e && e.message === 'bundle unavailable' && !baCut.mod && baCut.on) {
-      setTimeout(() => { if (baCut.on && !baCut.done[u] && !baCut.queued[u]) { baCut.queued[u] = 1; baCut.queue.push(u); baCutPump(); } }, 2000);
-      baCutRefresh();
-      return;
-    }
-    console.log('CUT-FAIL', e.message);
-    baCut.done[u] = 1; baCut.fin++;
-  }
-  baCutRefresh();
-}
-function baImgUrl(m) {
-  if (m && m.cut_pic) return m.cut_pic;
-  const u = hdUrl(m && m.good_pic);
-  return (u && baCut.done[u]) ? baCut.done[u] : u;
-}
+// AI 抠图功能已移除（2026-09-12）：改为全程使用本地预生成的 cut_pic WebP，避免运行时加载 1.2MB imgly 模型与逐图去背景。
+function baImgUrl(m) { return (m && m.cut_pic) ? m.cut_pic : hdUrl(m && m.good_pic); }
 function baLoadPhotos(models) {
   const queue = [];
   models.forEach(m => {
-    const cu = m.cut_pic;
-    if (cu && !baImgCache[cu]) { queue.push(cu); baImgCache[cu] = 'loading'; }
-    const hu = hdUrl(m.good_pic);
-    if (hu && !baImgCache[hu]) { baImgCache[hu] = 'loading'; queue.push(hu); }
+    const key = baImgUrl(m);
+    if (key && !baImgCache[key]) { queue.push(key); baImgCache[key] = 'loading'; }
   });
   let idx = 0, inflight = 0;
   const tick = () => {
@@ -1167,12 +1088,19 @@ function baLoadPhotos(models) {
       const u = queue[idx++];
       inflight++;
       const im = new Image();
-      im.onload = () => { baImgCache[u] = im; inflight--; if (chartBaProd) chartBaProd.draw(); if (chartBaCmp) chartBaCmp.draw(); tick(); if (u && !baCut.done[u] && !baCut.queued[u]) baCutEnsure(u); };
+      im.decoding = 'async';
+      im.onload = () => { baImgCache[u] = im; inflight--; baScheduleDraw(); tick(); };
       im.onerror = () => { baImgCache[u] = null; inflight--; tick(); };
       im.src = u;
     }
   };
   tick();
+}
+let baDrawPending = false;
+function baScheduleDraw() {
+  if (baDrawPending) return;
+  baDrawPending = true;
+  requestAnimationFrame(() => { baDrawPending = false; if (chartBaProd) chartBaProd.draw(); if (chartBaCmp) chartBaCmp.draw(); });
 }
 function baTrimName(n) {
   if (!n) return '';
@@ -1207,8 +1135,8 @@ const baCardPlugin = {
       const x0 = Math.round(c.cx - cw / 2), y0 = Math.round(c.cy - ch / 2);
       const bcol = multi ? ((chart.data.datasets[c.dsi] || {}).borderColor || '#888')
         : (light ? '#5a5a60' : 'rgba(255,255,255,0.45)');
-      const hu = hdUrl(c.m.good_pic);
-      const img = c.m.good_pic ? baImgCache[hu] : null;
+      const key = baImgUrl(c.m);
+      const img = key ? baImgCache[key] : null;
       if (img && img !== 'loading' && img.complete && img.naturalWidth > 0) {
         const ir = img.naturalWidth / img.naturalHeight, cr = cw / ih;
         let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0;
@@ -1370,7 +1298,6 @@ function fillBaSelects() {
   });
 }
 async function loadBaTab() {
-  baCutWarm();
   fillBaSelects();
   const sel=document.getElementById('baBrandSel');
   if(!sel.value && allBrands.length) sel.value=allBrands[0].brand_id;
