@@ -1165,7 +1165,7 @@ const baCardPlugin = {
       });
     });
     const ih = ch - 6;
-    const fontPx = ch < 26 ? 8 : (ch < 40 ? 9 : 10);
+    const fontPx = Math.max(12, Math.round(ch * 0.16));
     cards.forEach(c => {
       const x0 = Math.round(c.cx - cw / 2), y0 = Math.round(c.cy - ch / 2);
       const bcol = multi ? ((chart.data.datasets[c.dsi] || {}).borderColor || '#888')
@@ -1180,6 +1180,8 @@ const baCardPlugin = {
         const dx = x0 + (cw - dw) / 2, dy = y0 + (ih - dh) / 2;
         ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, cw, ih); ctx.clip();
         ctx.fillStyle = '#fff'; ctx.fillRect(x0, y0, cw, ih);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, bb.sx, bb.sy, bb.sw, bb.sh, dx, dy, dw, dh);
         ctx.restore();
       } else {
@@ -1234,7 +1236,7 @@ function baLayoutScatter(rows) {
   const types = TYPES.filter(t => map[t] && map[t].length);
   const labels = types.map(t => tType(t));
   const N_BUCKETS = DISP_BUCKETS.length;
-  const plotH = Math.min(2200, Math.max(560, N_BUCKETS * 70 + 40));
+  const plotH = Math.min(4400, Math.max(1120, N_BUCKETS * 140 + 80));
   const bandH = plotH / N_BUCKETS;
   let maxBucketCars = 1;
   const cols = types.map(t => {
@@ -1269,18 +1271,19 @@ function baLayoutScatter(rows) {
   });
   return { labels, pts, plotH, nCols: labels.length || 1, bandH, maxBucketCars };
 }
+const BA_SCALE = 2;
 function baChartBox(boxId, cfg) {
   const box = document.getElementById(boxId);
   if (!box) return null;
   const base = Math.max(420, (box.parentElement ? box.parentElement.clientWidth : 1200) || 1200);
-  const needW = cfg.nCols * 300 + 60;
+  const needW = cfg.nCols * 300 * BA_SCALE + 60 * BA_SCALE;
   const boxW = Math.max(base, needW);
   const colW = boxW / cfg.nCols;
-  const slot = Math.min(64, Math.max(30, (colW - 24) / 5));
-  const cw = Math.max(20, Math.round(slot - 8));
-  const ch = Math.max(12, cfg.step - 8);
+  const slot = Math.min(64 * BA_SCALE, Math.max(30 * BA_SCALE, (colW - 24 * BA_SCALE) / 5));
+  const cw = Math.max(20 * BA_SCALE, Math.round(slot - 8 * BA_SCALE));
+  const ch = Math.max(12 * BA_SCALE, ((cfg.step != null ? cfg.step * BA_SCALE : cfg.bandH)) - 8 * BA_SCALE);
   box.style.width = Math.round(boxW) + 'px';
-  box.style.height = Math.round(cfg.plotH + 175) + 'px';
+  box.style.height = Math.round(cfg.plotH + 175 * BA_SCALE) + 'px';
   cfg.geo = { cw, ch, slot };
   return cfg;
 }
