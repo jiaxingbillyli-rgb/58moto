@@ -1349,9 +1349,16 @@ function baLayoutScatter(rows) {
     return { t, byBucket };
   });
 
+  // 列宽紧凑方案：单桶最大并行数 × slot，但上限 = 8 辆车宽（超过 8 辆的车不并排）
+  const MAX_PARALLEL = 8;
+  const colMaxParallel = cols.map(col => {
+    let m = 1;
+    Object.values(col.byBucket).forEach(arr => { if (arr.length > m) m = arr.length; });
+    return Math.min(m, MAX_PARALLEL);
+  });
   const colCarCounts = cols.map(col => Object.values(col.byBucket).reduce((s, a) => s + a.length, 0));
-  const minColW = cw + 2 * pad + slot;
-  const colWidths = colCarCounts.map(n => Math.max(n * slot + cw + 2 * pad, minColW));
+  const minColW = cw + 2 * pad;
+  const colWidths = colMaxParallel.map(n => Math.max(n * slot + 2 * pad, minColW));
   const colCenters = [];
   let cumX = 0;
   for (let i = 0; i < colWidths.length; i++) { colCenters.push(cumX + colWidths[i] / 2); cumX += colWidths[i]; }
@@ -1368,10 +1375,14 @@ function baLayoutScatter(rows) {
       Object.entries(byDisp).forEach(([dispStr, group]) => {
         const disp = parseFloat(dispStr);
         const ypx = bucketDispY[bi][disp];
-        const n = group.length;
-        group.forEach((c, k) => {
+        // 超过 8 辆的车按价格排序只取前 8 辆（保持列宽紧凑）
+        const MAX_PARALLEL = 8;
+        const sorted = group.length > MAX_PARALLEL ? group.slice().sort((a, b) => (a.min_price || 0) - (b.min_price || 0)).slice(0, MAX_PARALLEL) : group;
+        const n = sorted.length;
+        const hidden = group.length - n;
+        sorted.forEach((c, k) => {
           const xoff = k - (n - 1) / 2;
-          pts.push({ x: colCenters[ci], y: ypx, _m: c.m, _s: k, _n: n, _xoff: xoff, _bi: bi, _ci: ci, _disp: disp });
+          pts.push({ x: colCenters[ci], y: ypx, _m: c.m, _s: k, _n: n, _xoff: xoff, _bi: bi, _ci: ci, _disp: disp, _hidden: hidden });
         });
       });
     });
