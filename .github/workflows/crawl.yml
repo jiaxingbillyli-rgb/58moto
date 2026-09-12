@@ -17,6 +17,10 @@ concurrency:
   group: crawl-58moto
   cancel-in-progress: false
 
+# 用 GitHub 自带的 GITHUB_TOKEN push data.json（无需手动配置 secret）
+permissions:
+  contents: write
+
 jobs:
   crawl:
     runs-on: ubuntu-latest
@@ -24,9 +28,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # 需要写权限才能 push data.json
-          token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+        # 默认用 GITHUB_TOKEN，无需 WORKFLOW_PUSH_TOKEN
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -97,7 +99,7 @@ jobs:
 
       - name: Commit and push
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "58moto-bot"
           git config user.email "bot@58moto.local"
