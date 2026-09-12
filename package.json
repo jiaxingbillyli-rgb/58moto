@@ -1,0 +1,13 @@
+{
+  "name": "58moto-crawler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "58moto 数据爬虫（CI 用）",
+  "scripts": {
+    "crawl": "node update_data.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "puppeteer-core": "^24.0.0"
+  }
+}

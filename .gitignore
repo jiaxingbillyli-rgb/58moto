@@ -1,0 +1,14 @@
+# 爬虫生成的数据库（不入库，CI 每次现抓）
+58moto.db
+*.db
+*.db-journal
+
+# 依赖
+node_modules/
+__pycache__/
+*.pyc
+
+# 本地临时文件
+__*.js
+本地预览.bat
+__srv.js

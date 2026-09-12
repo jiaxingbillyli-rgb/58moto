@@ -2,7 +2,9 @@ import sqlite3, json, re, io, os, datetime
 
 STATIC = os.path.dirname(os.path.abspath(__file__))
 WS = os.path.dirname(STATIC)
-DB = os.path.join(WS, '58moto.db')
+DB = os.path.join(STATIC, '58moto.db')
+if not os.path.exists(DB):
+    DB = os.path.join(WS, '58moto.db')
 OUT = os.path.join(STATIC, 'data.json')
 
 os.makedirs(STATIC, exist_ok=True)
