@@ -1610,7 +1610,8 @@ async function triggerUpdate() {
   const log = document.getElementById('updateLog');
   const closeBtn = document.getElementById('updateCloseBtn');
   if (closeBtn) closeBtn.style.display = 'inline-block';
-  if (log) log.textContent = '';
+  // 静态说明模式下隐藏黑色日志框（终端样式 CSS 在静态场景无意义）
+  if (log) { log.textContent = ''; log.style.display = 'none'; }
   if (progress) {
     progress.innerHTML = (LANG==='en'
       ? '<div style="text-align:left;line-height:1.7;padding:12px 0">' +
@@ -1622,7 +1623,7 @@ async function triggerUpdate() {
         '<li>Commit new <code>data.json</code> to the repo</li>' +
         '<li>GitHub Pages will auto-rebuild in ~90 seconds</li>' +
         '</ol>' +
-        '<p style="margin-top:10px;color:#888">Last data sync: ' + (DATA && DATA._synced_at ? DATA._synced_at : 'unknown') + '</p>' +
+        '<p style="margin-top:10px;color:#888">Last data sync: ' + (DATA && DATA.generated_at ? DATA.generated_at : 'unknown') + '</p>' +
         '</div>'
       : '<div style="text-align:left;line-height:1.7;padding:12px 0">' +
         '<h3 style="margin:0 0 8px 0;color:#e94560">静态站点：暂不支持自动更新</h3>' +
@@ -1633,10 +1634,15 @@ async function triggerUpdate() {
         '<li>提交新的 <code>data.json</code> 到仓库</li>' +
         '<li>GitHub Pages 会自动重建（约 90 秒）</li>' +
         '</ol>' +
-        '<p style="margin-top:10px;color:#888">最近一次数据同步：' + (DATA && DATA._synced_at ? DATA._synced_at : '未知') + '</p>' +
+        '<p style="margin-top:10px;color:#888">最近一次数据同步：' + (DATA && DATA.generated_at ? DATA.generated_at : '未知') + '</p>' +
         '</div>');
   }
   if (modal) modal.style.display = 'flex';
+}
+// 兼容老 pollUpdate 调用：不再隐藏 updateLog
+function _showUpdateLog() {
+  const log = document.getElementById('updateLog');
+  if (log) log.style.display = '';
 }
 
 async function pollUpdate() {
