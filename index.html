@@ -1603,38 +1603,91 @@ function toggleLang() {
 // ===================== 数据更新 =====================
 let _updatePollTimer = null;
 async function triggerUpdate() {
-  // 静态 Pages 站点没有后端：POST /api/update 不存在
-  // 显示数据来源说明 + 更新方式
+  // 显示数据新鲜度 + 自动化更新说明
   const modal = document.getElementById('updateModal');
   const progress = document.getElementById('updateProgress');
   const log = document.getElementById('updateLog');
   const closeBtn = document.getElementById('updateCloseBtn');
   if (closeBtn) closeBtn.style.display = 'inline-block';
-  // 静态说明模式下隐藏黑色日志框（终端样式 CSS 在静态场景无意义）
   if (log) { log.textContent = ''; log.style.display = 'none'; }
+
+  // 计算数据新鲜度
+  let ageText = (LANG==='en' ? 'unknown' : '未知');
+  let generatedAt = (DATA && DATA.generated_at) ? DATA.generated_at : null;
+  if (generatedAt) {
+    const t = new Date(generatedAt).getTime();
+    const diff = Date.now() - t;
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor(diff / 3600000);
+    if (days >= 1) ageText = (LANG==='en' ? days + ' days ago' : days + ' 天前');
+    else if (hours >= 1) ageText = (LANG==='en' ? hours + ' hours ago' : hours + ' 小时前');
+    else ageText = (LANG==='en' ? 'just now' : '刚刚');
+  }
+  const modelCount = (DATA && DATA.models) ? DATA.models.length : 0;
+  const brandCount = (DATA && DATA.brands) ? DATA.brands.length : 0;
+
+  const secretsUrl = 'https://github.com/jiaxingbillyli-rgb/58moto/settings/secrets/actions/new';
+  const actionsUrl = 'https://github.com/jiaxingbillyli-rgb/58moto/actions/workflows/crawl.yml';
+
   if (progress) {
     progress.innerHTML = (LANG==='en'
-      ? '<div style="text-align:left;line-height:1.7;padding:12px 0">' +
-        '<h3 style="margin:0 0 8px 0;color:#e94560">Static Site: Auto-Update Not Available</h3>' +
-        '<p>This page is a static GitHub Pages deployment. The <code>/api/update</code> backend endpoint does not exist.</p>' +
-        '<p><b>How to update data:</b></p>' +
-        '<ol style="margin-left:20px">' +
-        '<li>Run the crawler locally: <code>python 58moto_static/export_static.py</code></li>' +
-        '<li>Commit new <code>data.json</code> to the repo</li>' +
-        '<li>GitHub Pages will auto-rebuild in ~90 seconds</li>' +
+      ? '<div style="text-align:left;line-height:1.7;padding:8px 0">' +
+        '<h3 style="margin:0 0 8px 0;color:#e94560">Data Freshness</h3>' +
+        '<table style="border-collapse:collapse;width:100%;margin-bottom:14px">' +
+        '<tr><td style="padding:4px 8px;color:#888">Last sync</td><td style="padding:4px 8px"><b>' + (generatedAt || 'unknown') + '</b> (' + ageText + ')</td></tr>' +
+        '<tr><td style="padding:4px 8px;color:#888">Models</td><td style="padding:4px 8px">' + modelCount + '</td></tr>' +
+        '<tr><td style="padding:4px 8px;color:#888">Brands</td><td style="padding:4px 8px">' + brandCount + '</td></tr>' +
+        '</table>' +
+        '<h3 style="margin:8px 0;color:#e94560">Automatic Updates</h3>' +
+        '<p>Data is updated by <b>GitHub Actions</b>:</p>' +
+        '<ul style="margin-left:20px">' +
+        '<li>Schedule: <b>Every Monday 10:00 AM Beijing Time</b></li>' +
+        '</ul>' +
+        '<h3 style="margin:12px 0 6px 0;color:#e94560">One-Time Setup (admin only)</h3>' +
+        '<p>Before triggering, the repo admin must add a secret:</p>' +
+        '<ol style="margin-left:20px;font-size:13px">' +
+        '<li>Generate a fine-grained PAT at github.com (only <code>jiaxingbillyli-rgb/58moto</code> repo, Contents = Read and Write)</li>' +
+        '<li>Open <a href="' + secretsUrl + '" target="_blank" style="color:#e94560">repo Secrets settings</a></li>' +
+        '<li>Click <b>New repository secret</b>: Name=<code>WORKFLOW_PUSH_TOKEN</code>, Value=PAT</li>' +
         '</ol>' +
-        '<p style="margin-top:10px;color:#888">Last data sync: ' + (DATA && DATA.generated_at ? DATA.generated_at : 'unknown') + '</p>' +
+        '<p style="margin-top:12px">' +
+        '<a href="' + actionsUrl + '" target="_blank" ' +
+        'style="display:inline-block;background:#e94560;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;font-weight:600">' +
+        'Trigger Update Now (GitHub Actions)' +
+        '</a>' +
+        '</p>' +
+        '<p style="margin-top:12px;color:#888;font-size:12px">' +
+        'Click above -> "Run workflow" -> ~3-10 min crawl -> ~90s Pages rebuild -> hard refresh (Ctrl+Shift+R).' +
+        '</p>' +
         '</div>'
-      : '<div style="text-align:left;line-height:1.7;padding:12px 0">' +
-        '<h3 style="margin:0 0 8px 0;color:#e94560">静态站点：暂不支持自动更新</h3>' +
-        '<p>本站是 GitHub Pages 静态部署，没有后端，<code>/api/update</code> 端点不存在。</p>' +
-        '<p><b>更新数据方式：</b></p>' +
-        '<ol style="margin-left:20px">' +
-        '<li>本地运行爬虫：<code>python 58moto_static/export_static.py</code></li>' +
-        '<li>提交新的 <code>data.json</code> 到仓库</li>' +
-        '<li>GitHub Pages 会自动重建（约 90 秒）</li>' +
+      : '<div style="text-align:left;line-height:1.7;padding:8px 0">' +
+        '<h3 style="margin:0 0 8px 0;color:#e94560">数据新鲜度</h3>' +
+        '<table style="border-collapse:collapse;width:100%;margin-bottom:14px">' +
+        '<tr><td style="padding:4px 8px;color:#888">上次同步</td><td style="padding:4px 8px"><b>' + (generatedAt || '未知') + '</b> (' + ageText + ')</td></tr>' +
+        '<tr><td style="padding:4px 8px;color:#888">车型数</td><td style="padding:4px 8px">' + modelCount + '</td></tr>' +
+        '<tr><td style="padding:4px 8px;color:#888">品牌数</td><td style="padding:4px 8px">' + brandCount + '</td></tr>' +
+        '</table>' +
+        '<h3 style="margin:8px 0;color:#e94560">自动化更新</h3>' +
+        '<p>数据由 <b>GitHub Actions</b> 自动维护：</p>' +
+        '<ul style="margin-left:20px">' +
+        '<li>调度时间：<b>每周一北京时间 10:00</b></li>' +
+        '</ul>' +
+        '<h3 style="margin:12px 0 6px 0;color:#e94560">首次配置（管理员操作）</h3>' +
+        '<p>触发更新前，仓库管理员需先添加一个 Secret：</p>' +
+        '<ol style="margin-left:20px;font-size:13px">' +
+        '<li>在 github.com 生成 fine-grained PAT（仅勾选 <code>jiaxingbillyli-rgb/58moto</code> 仓库，Contents = Read and Write）</li>' +
+        '<li>打开 <a href="' + secretsUrl + '" target="_blank" style="color:#e94560">仓库 Secrets 设置</a></li>' +
+        '<li>点 <b>New repository secret</b>：Name=<code>WORKFLOW_PUSH_TOKEN</code>, Value=填入 PAT</li>' +
         '</ol>' +
-        '<p style="margin-top:10px;color:#888">最近一次数据同步：' + (DATA && DATA.generated_at ? DATA.generated_at : '未知') + '</p>' +
+        '<p style="margin-top:12px">' +
+        '<a href="' + actionsUrl + '" target="_blank" ' +
+        'style="display:inline-block;background:#e94560;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;font-weight:600">' +
+        '立即触发更新（GitHub Actions）' +
+        '</a>' +
+        '</p>' +
+        '<p style="margin-top:12px;color:#888;font-size:12px">' +
+        '点上面按钮 -> "Run workflow" -> 等 ~3-10 分钟爬虫 -> ~90 秒 Pages 重建 -> 硬刷新（Ctrl+Shift+R）。' +
+        '</p>' +
         '</div>');
   }
   if (modal) modal.style.display = 'flex';
