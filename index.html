@@ -1258,15 +1258,23 @@ function baGeo() {
 function baLayoutScatter(rows) {
   const map = {};
   let minD = Infinity, maxD = -Infinity;
-  rows.forEach(m => { const dd = extractDisp(m.good_name); if (!dd || !m.vehicle_type) return; (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd }); if (dd < minD) minD = dd; if (dd > maxD) maxD = dd; });
+  rows.forEach(m => { const dd = m.disp || extractDisp(m.good_name); if (!dd || !m.vehicle_type) return; (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd }); if (dd < minD) minD = dd; if (dd > maxD) maxD = dd; });
   if (!isFinite(minD)) { minD = 0; maxD = 100; }
   const yMin = Math.max(0, minD - 50), yMax = maxD + 50;
   const types = TYPES.filter(t => map[t] && map[t].length);
   const labels = types.map(t => tType(t));
   const span = yMax - yMin;
-  let step = Math.max(50, Math.ceil((span / 8) / 50) * 50);
   const buckets = [];
-  for (let lo = yMin; lo < yMax - 1e-6; lo += step) { const hi = Math.min(lo + step, yMax); buckets.push({ min: lo, max: hi, label: (lo === yMin ? (lo + '~' + hi) : (lo + '-' + hi)) }); }
+  // 分段步长：0-500cc 用50cc/桶，500-1000cc 用100cc/桶，1000+ 用200cc/桶
+  for (let lo = 0; lo < yMax - 1e-6; ) {
+    let st;
+    if (lo < 500) st = 50;
+    else if (lo < 1000) st = 100;
+    else st = 200;
+    const hi = Math.min(lo + st, yMax);
+    buckets.push({ min: lo, max: hi, label: lo + '-' + hi });
+    lo = hi;
+  }
   const N_BUCKETS = buckets.length;
   const geo0 = baGeo();
   const bandH = geo0.bandH;
@@ -1302,7 +1310,8 @@ function baLayoutScatter(rows) {
     });
   });
   const plotH = N_BUCKETS * bandH + 40;
-  return { labels, pts, nCols: labels.length || 1, buckets, yMin, yMax, bandH, plotH, maxBucketCars, step, colCarCounts, colWidths, colCenters, totalWidth };
+
+  return { labels, pts, nCols: labels.length || 1, buckets, yMin, yMax, bandH, plotH, maxBucketCars, colCarCounts, colWidths, colCenters, totalWidth };
 }
 function baSetScale(s) {
   window.__BA_SCALE = parseInt(s) || 2;
