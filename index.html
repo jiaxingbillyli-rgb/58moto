@@ -1603,38 +1603,46 @@ function toggleLang() {
 // ===================== 数据更新 =====================
 let _updatePollTimer = null;
 async function triggerUpdate() {
-  if(!confirm(LANG==='en' ? 'Update data from 58moto.com?\nThis may take 3-10 minutes.' : '从 58moto.com 更新数据？\n可能需要 3-10 分钟。')) return;
-  
-  const btn = document.getElementById('updateBtn');
-  btn.disabled = true;
-  btn.textContent = t('update_running_btn');
-  
+  // 静态 Pages 站点没有后端：POST /api/update 不存在
+  // 显示数据来源说明 + 更新方式
   const modal = document.getElementById('updateModal');
   const progress = document.getElementById('updateProgress');
   const log = document.getElementById('updateLog');
   const closeBtn = document.getElementById('updateCloseBtn');
-  closeBtn.style.display = 'none';
-  log.textContent = '';
-  progress.textContent = t('update_starting');
-  modal.style.display = 'flex';
-  
-  try {
-    const r = await fetch('/api/update', {method:'POST'});
-    const d = await r.json();
-    if(d.status === 'already_running') {
-      progress.textContent = LANG==='en' ? 'Update already in progress...' : '更新正在进行中...';
-    }
-    // 开始轮询
-    _updatePollTimer = setInterval(pollUpdate, 1000);
-  } catch(e) {
-    progress.textContent = t('update_failed') + ': ' + e.message;
-    closeBtn.style.display = 'inline-block';
-    btn.disabled = false;
-    btn.textContent = t('update_btn');
+  if (closeBtn) closeBtn.style.display = 'inline-block';
+  if (log) log.textContent = '';
+  if (progress) {
+    progress.innerHTML = (LANG==='en'
+      ? '<div style="text-align:left;line-height:1.7;padding:12px 0">' +
+        '<h3 style="margin:0 0 8px 0;color:#e94560">Static Site: Auto-Update Not Available</h3>' +
+        '<p>This page is a static GitHub Pages deployment. The <code>/api/update</code> backend endpoint does not exist.</p>' +
+        '<p><b>How to update data:</b></p>' +
+        '<ol style="margin-left:20px">' +
+        '<li>Run the crawler locally: <code>python 58moto_static/export_static.py</code></li>' +
+        '<li>Commit new <code>data.json</code> to the repo</li>' +
+        '<li>GitHub Pages will auto-rebuild in ~90 seconds</li>' +
+        '</ol>' +
+        '<p style="margin-top:10px;color:#888">Last data sync: ' + (DATA && DATA._synced_at ? DATA._synced_at : 'unknown') + '</p>' +
+        '</div>'
+      : '<div style="text-align:left;line-height:1.7;padding:12px 0">' +
+        '<h3 style="margin:0 0 8px 0;color:#e94560">静态站点：暂不支持自动更新</h3>' +
+        '<p>本站是 GitHub Pages 静态部署，没有后端，<code>/api/update</code> 端点不存在。</p>' +
+        '<p><b>更新数据方式：</b></p>' +
+        '<ol style="margin-left:20px">' +
+        '<li>本地运行爬虫：<code>python 58moto_static/export_static.py</code></li>' +
+        '<li>提交新的 <code>data.json</code> 到仓库</li>' +
+        '<li>GitHub Pages 会自动重建（约 90 秒）</li>' +
+        '</ol>' +
+        '<p style="margin-top:10px;color:#888">最近一次数据同步：' + (DATA && DATA._synced_at ? DATA._synced_at : '未知') + '</p>' +
+        '</div>');
   }
+  if (modal) modal.style.display = 'flex';
 }
 
 async function pollUpdate() {
+  // 静态站点没有 /api/update/status，no-op
+  if (_updatePollTimer) { clearInterval(_updatePollTimer); _updatePollTimer = null; }
+  return;
   try {
     const r = await fetch('/api/update/status');
     const d = await r.json();
