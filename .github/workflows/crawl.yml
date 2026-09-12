@@ -1,0 +1,113 @@
+name: Crawl 58moto Data
+
+on:
+  # 每周一 UTC 02:00（北京时间 10:00）自动跑
+  schedule:
+    - cron: '0 2 * * 1'
+  # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force update even if recent'
+        required: false
+        default: 'false'
+
+# 防止多个 workflow 同时跑
+concurrency:
+  group: crawl-58moto
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 需要写权限才能 push data.json
+          token: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Chrome (for puppeteer-core)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          echo "CHROME=$(which google-chrome-stable)" >> $GITHUB_ENV
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Run crawler
+        env:
+          # 让 puppeteer 用刚安装的 chrome
+          PUPPETEER_EXECUTABLE_PATH: ${{ env.CHROME }}
+        run: |
+          # 失败重试 3 次
+          for i in 1 2 3; do
+            echo "=== Attempt $i ==="
+            if node update_data.js; then
+              echo "Crawl OK"
+              break
+            else
+              echo "Crawl failed (attempt $i)"
+              if [ $i -lt 3 ]; then
+                echo "Retry in 60s..."
+                sleep 60
+              fi
+            fi
+          done
+
+      - name: Verify DB
+        run: |
+          if [ ! -f 58moto.db ]; then
+            echo "::error::58moto.db not created - crawl failed"
+            exit 1
+          fi
+          ls -la 58moto.db
+
+      - name: Export data.json
+        run: python export_static.py
+
+      - name: Verify data.json
+        run: |
+          if [ ! -f data.json ]; then
+            echo "::error::data.json not generated"
+            exit 1
+          fi
+          # 检查 model 数量合理
+          models=$(node -e "const d=require('./data.json');console.log(d.models.length)")
+          echo "Models: $models"
+          if [ "$models" -lt 1000 ]; then
+            echo "::error::Model count too low ($models), likely partial crawl - aborting"
+            exit 1
+          fi
+          # 备份旧版
+          cp data.json data.json.new
+
+      - name: Commit and push
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PUSH_TOKEN }}
+        run: |
+          git config user.name "58moto-bot"
+          git config user.email "bot@58moto.local"
+          git add data.json
+          if git diff --cached --quiet; then
+            echo "No changes to data.json"
+          else
+            timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            models=$(node -e "const d=require('./data.json');console.log(d.models.length)")
+            git commit -m "chore(data): 自动更新 $models 车型 @ $timestamp"
+            git push
+            echo "Pushed: $models models @ $timestamp"
+          fi
