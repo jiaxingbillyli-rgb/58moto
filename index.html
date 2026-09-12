@@ -1243,16 +1243,18 @@ function dispBucketIdx(disp) {
 }
 function baGeo() {
   const S = (typeof window !== 'undefined' && window.__BA_SCALE) || 2;
-  const slot = 56 * S;
-  const gap = 6 * S;
-  const cw = slot - gap;
+  // 1x 照片基础做大（100px），不再等比例缩小
+  // 切换档位时照片 +30px/档，间距只 +15px/档（照片增加比间距快 = 照片变大的视觉感更强）
+  const cw = 70 + 30 * S;      // 1x=100, 2x=130, 3x=160, 4x=190
   const ch = cw;
-  const fontPx = 10 * S;
+  const slot = cw + 20;        // 间距 = 照片 + 20px 边距（保证不重叠）
+  const gap = 4 * S;
+  const fontPx = 11 + 3 * S;   // 1x=14, 2x=17, 3x=20, 4x=23
   const nameH = fontPx + 6 * S;
   const pad = 4 * S;
-  const priceH = Math.round(11 * S);
+  const priceH = Math.round(13 + 3 * S);  // 1x=16, 2x=19, 3x=22, 4x=25
   const cardH = ch + nameH + priceH;
-  const bandH = cardH + 14 * S;
+  const bandH = cardH + 12 * S;
   return { S, slot, gap, cw, ch, fontPx, nameH, priceH, pad, cardH, bandH };
 }
 function baLayoutScatter(rows) {
