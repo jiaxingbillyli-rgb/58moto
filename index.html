@@ -1150,7 +1150,7 @@ const baCardPlugin = {
     const ca = chart.chartArea, xS = chart.scales.x, yS = chart.scales.y;
     if (!ca || !xS || !yS) return;
     const cw = opts.cw || 44, ch = opts.ch || 54, slot = opts.slot || 52;
-    const nameH = opts.nameH || 16, cardH = opts.cardH || (ch + nameH), pad = opts.pad || 4, fontPx0 = opts.fontPx || 10;
+    const nameH = opts.nameH || 16, cardH = opts.cardH || (ch + nameH), pad = opts.pad || 4, fontPx0 = opts.fontPx || 10, priceH = opts.priceH || 14;
     const ctx = chart.ctx;
     ctx.save();
     const cards = [];
@@ -1195,14 +1195,25 @@ const baCardPlugin = {
       // name strip: white bg + bold black, auto-shrink font so the full text always fits (no ellipsis)
       const ny0 = y0 + ih;
       ctx.fillStyle = '#fff';
-      ctx.fillRect(x0, ny0, cw, cardH - ih);
+      ctx.fillRect(x0, ny0, cw, nameH);
       let nm = c.m.good_name || '';
       let fpx = fontPx0;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = 'bold ' + fpx + 'px sans-serif';
       while (fpx > 6 && ctx.measureText(nm).width > cw - 2 * pad) { fpx -= 1; ctx.font = 'bold ' + fpx + 'px sans-serif'; }
       ctx.fillStyle = '#000';
-      ctx.fillText(nm, c.cx, ny0 + (cardH - ih) / 2);
+      ctx.fillText(nm, c.cx, ny0 + nameH / 2);
+      // price strip (below name): white bg + accent color price text, auto-shrink to fit
+      const py0 = ny0 + nameH;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x0, py0, cw, priceH);
+      const _mn = c.m.min_price, _mx = c.m.max_price;
+      let pp = (typeof fmtK === 'function') ? ((_mn && _mx && _mn !== _mx) ? (fmtK(_mn) + '-' + fmtK(_mx)) : fmtK(_mn || _mx)) : ((_mn || _mx) ? String(_mn) : '-');
+      let pfpx = Math.max(7, fontPx0 - 2);
+      ctx.font = pfpx + 'px sans-serif';
+      while (pfpx > 6 && ctx.measureText(pp).width > cw - 2 * pad) { pfpx -= 1; ctx.font = pfpx + 'px sans-serif'; }
+      ctx.fillStyle = '#e94560';
+      ctx.fillText(pp, c.cx, py0 + priceH / 2);
     });
     ctx.restore();
     cards.__w = cw; cards.__h = cardH;
@@ -1239,9 +1250,10 @@ function baGeo() {
   const fontPx = 10 * S;
   const nameH = fontPx + 6 * S;
   const pad = 4 * S;
-  const cardH = ch + nameH + pad;
+  const priceH = Math.round(11 * S);
+  const cardH = ch + nameH + priceH;
   const bandH = cardH + 14 * S;
-  return { S, slot, gap, cw, ch, fontPx, nameH, pad, cardH, bandH };
+  return { S, slot, gap, cw, ch, fontPx, nameH, priceH, pad, cardH, bandH };
 }
 function baLayoutScatter(rows) {
   const map = {};
@@ -1304,7 +1316,7 @@ function baChartBox(boxId, cfg) {
   const geo = baGeo();
   box.style.width = Math.round(cfg.totalWidth + 60) + 'px';
   box.style.height = Math.round(cfg.plotH + 60) + 'px';
-  cfg.geo = { cw: geo.cw, ch: geo.ch, slot: geo.slot, nameH: geo.nameH, fontPx: geo.fontPx, cardH: geo.cardH, pad: geo.pad, bandH: cfg.bandH };
+  cfg.geo = { cw: geo.cw, ch: geo.ch, slot: geo.slot, nameH: geo.nameH, fontPx: geo.fontPx, cardH: geo.cardH, pad: geo.pad, priceH: geo.priceH, bandH: cfg.bandH };
   return cfg;
 }
 
@@ -1400,7 +1412,7 @@ function baDrawProd(rows) {
   const ac = baAxisCol();
   const ctx = document.getElementById('baProdChart').getContext('2d');
   if (chartBaProd) chartBaProd.destroy();
-  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: 0, max: cfg.totalWidth, ticks: { autoSkip: false, includeBounds: false, color: ac.tick, font: { size: 12 }, callback: function(v) { const idx = cfg.colCenters.indexOf(v); return idx >= 0 ? cfg.labels[idx] : ''; } }, afterBuildTicks: function(axis) { axis.ticks = (cfg.colCenters || []).map(c => ({ value: c })); }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
+  chartBaProd = new Chart(ctx, { type: 'scatter', data: { datasets: [{ label: t('model_count'), data: cfg.pts, pointRadius: 0, borderColor: '#e94560' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad, priceH: cfg.geo.priceH } }, scales: { x: { type: 'linear', min: 0, max: cfg.totalWidth, ticks: { autoSkip: false, includeBounds: false, color: ac.tick, font: { size: 12 }, callback: function(v) { const idx = cfg.colCenters.indexOf(v); return idx >= 0 ? cfg.labels[idx] : ''; } }, afterBuildTicks: function(axis) { axis.ticks = (cfg.colCenters || []).map(c => ({ value: c })); }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
   baAttachCards(ctx.canvas, () => chartBaProd, 'baProdPanel', 'baProdTitle', 'baProdGrid');
 }function baShowDetail(panelId,titleId,gridId,m) {
   const panel=document.getElementById(panelId);
@@ -1449,7 +1461,7 @@ async function loadBaCompare() {
   const ac = baAxisCol();
   const ctx = document.getElementById('baCmpChart').getContext('2d');
   if (chartBaCmp) chartBaCmp.destroy();
-  chartBaCmp = new Chart(ctx, { type: 'scatter', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: true, labels: { boxWidth: 12, font: { size: 11 }, color: ac.tick } }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad } }, scales: { x: { type: 'linear', min: 0, max: cfg.totalWidth, ticks: { autoSkip: false, includeBounds: false, color: ac.tick, font: { size: 12 }, callback: function(v) { const idx = cfg.colCenters.indexOf(v); return idx >= 0 ? cfg.labels[idx] : ''; } }, afterBuildTicks: function(axis) { axis.ticks = (cfg.colCenters || []).map(c => ({ value: c })); }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
+  chartBaCmp = new Chart(ctx, { type: 'scatter', data: { datasets: ds }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: true, labels: { boxWidth: 12, font: { size: 11 }, color: ac.tick } }, baCardGrid: { enabled: true, cw: cfg.geo.cw, ch: cfg.geo.ch, slot: cfg.geo.slot, nameH: cfg.geo.nameH, fontPx: cfg.geo.fontPx, cardH: cfg.geo.cardH, pad: cfg.geo.pad, priceH: cfg.geo.priceH } }, scales: { x: { type: 'linear', min: 0, max: cfg.totalWidth, ticks: { autoSkip: false, includeBounds: false, color: ac.tick, font: { size: 12 }, callback: function(v) { const idx = cfg.colCenters.indexOf(v); return idx >= 0 ? cfg.labels[idx] : ''; } }, afterBuildTicks: function(axis) { axis.ticks = (cfg.colCenters || []).map(c => ({ value: c })); }, grid: { display: false }, title: { display: true, text: zhEn('车辆类型', 'Vehicle Type'), color: ac.title } }, y: { min: 0, max: cfg.plotH, title: { display: true, text: zhEn('排量 (cc)', 'Displacement (cc)'), color: ac.title }, ticks: { color: ac.tick, font: { size: 11 }, stepSize: cfg.bandH, callback: v => { const bi = Math.round(v / cfg.bandH); return (bi >= 0 && bi < cfg.buckets.length) ? cfg.buckets[bi].label : ''; } }, grid: { color: ac.grid } } } } });
   baAttachCards(ctx.canvas, () => chartBaCmp, 'baCmpPanel', 'baCmpTitle', 'baCmpGrid');
 }
 
