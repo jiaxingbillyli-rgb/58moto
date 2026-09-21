@@ -78,7 +78,9 @@ const GRADE_TYPE_MAP = {
 };
 
 const SERIES_TYPE_RULES = [
-  (['ATV','UTV','SSV','全地形车','Sea-doo','Ski-doo','雪橇','摩托艇','边三轮','倒三轮','Spyder','剃刀','RZR'], '三轮'),
+  // 四轮车（ATV/UTV/SSV/全地形车）必须排在「三轮」之前，否则会被吞进三轮
+  (['ATV','UTV','SSV','全地形车','Side by Side','SxS','四轮','沙滩车','巴吉','剃刀','RZR','CFORCE','ZFORCE','UFORCE'], '四轮车'),
+  (['Sea-doo','Ski-doo','雪橇','摩托艇','边三轮','倒三轮','三轮','Spyder'], '三轮'),
   (['踏板','ESP系列','CoCo','Cola','MIKU','RT踏板','ADV踏板','MO踏板','飞雅','PRIMAVERA','LX系列','GTS','DJango','冠能','潮玩踏板','运动踏板','街道踏板','水冷踏板','风冷踏板','小型踏板','中型踏板','跨界踏板','时尚实用','通勤','龟系列','龟系','鹰系列','鹰系','牛系列','巧客','志界菱蒙踏板','踏板风韵','飞致','飞火流星','钻系列'], '踏板'),
   (['跑车','SPORTBIKE','Superbike','RC跑车','趴赛跑车','公路赛车','SuperSport','Panigale'], '跑车'),
   (['街车','NK系列','MT系列','Monster','Modern现代街车','RZ街车','Z系列','N系列'], '街车'),

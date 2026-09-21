@@ -12,3 +12,8 @@ __pycache__/
 __*.js
 本地预览.bat
 __srv.js
+
+# 抓取中间产物（体积大，CI 每次现抓，不入库）
+models_raw_v2.json
+brand_directory.json
+data.json.bak.*

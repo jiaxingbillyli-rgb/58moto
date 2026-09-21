@@ -537,7 +537,7 @@ const I18N = {
     update_starting:'Starting...', update_running:'Updating...', update_done:'✅ Update complete! Page will reload.', update_failed:'❌ Update failed', update_running_btn:'Updating...'
   }
 };
-const TYPE_EN = {'跑车':'Sport','街车':'Naked','踏板':'Scooter','复古':'Retro','巡航太子':'Cruiser','拉力':'Adventure','旅行':'Touring','MINI':'MINI','越野':'Off-road','弯梁':'Underbone','三轮':'Tricycle','其他':'Other','跨骑':'Road'};
+const TYPE_EN = {'跑车':'Sport','街车':'Naked','踏板':'Scooter','复古':'Retro','巡航太子':'Cruiser','拉力':'Adventure','旅行':'Touring','MINI':'MINI','越野':'Off-road','弯梁':'Underbone','三轮':'Tricycle','四轮车':'ATV/UTV','其他':'Other','跨骑':'Road'};
 let LANG = localStorage.getItem('lang') || 'zh';
 function t(k){ return (I18N[LANG] && I18N[LANG][k] !== undefined) ? I18N[LANG][k] : (I18N.zh[k] !== undefined ? I18N.zh[k] : k); }
 function tType(v){ return (LANG==='en' && TYPE_EN[v]) ? TYPE_EN[v] : v; }
@@ -619,8 +619,22 @@ Chart.register(scatterModelLabels);
 const SCATTER_LABEL_MAX = 250;
 
 // ===================== 数据 / 常量 =====================
-const TYPES = ['跑车','街车','踏板','复古','巡航太子','拉力','旅行','MINI','越野','弯梁','三轮'];
-const COLORS = {'跑车':'#e94560','街车':'#0f3460','踏板':'#16c79a','复古':'#f5a623','巡航太子':'#9b59b6','拉力':'#3498db','旅行':'#e67e22','MINI':'#1abc9c','越野':'#e74c3c','弯梁':'#95a5a6','三轮':'#34495e'};
+const TYPES = ['跑车','街车','踏板','复古','巡航太子','拉力','旅行','MINI','越野','弯梁','三轮','四轮车','跨骑','其他'];
+const COLORS = {'跑车':'#e94560','街车':'#0f3460','踏板':'#16c79a','复古':'#f5a623','巡航太子':'#9b59b6','拉力':'#3498db','旅行':'#e67e22','MINI':'#1abc9c','越野':'#e74c3c','弯梁':'#95a5a6','三轮':'#34495e','四轮车':'#d35400','跨骑':'#7f8c8d','其他':'#606060'};
+// ---- 车型类型归一化 ----
+// 历史数据里 vehicle_type 有三种脏值：① 数字代码（2/3/4/8/9…）② 被截断的中文（"力"/"古"/"板"/"I"）
+// ③ 空值。前端 TYPES 只认完整中文标签，脏值会导致 baLayoutScatter 里的
+// `TYPES.filter(t => map[t])` 命中为空 —— 表现为「选了品牌但照片分布图一片空白」（奔达即此情况）。
+const VT_CODE_MAP = {2:'弯梁',3:'踏板',4:'巡航太子',5:'越野',8:'街车',9:'跑车',10:'旅行',11:'拉力',12:'三轮',15:'MINI'};
+const VT_FIX_MAP = {'力':'拉力','古':'复古','板':'踏板','I':'MINI','i':'MINI','迷你':'MINI','骑':'跨骑','车':'其他','动':'踏板'};
+function normalizeType(v) {
+  const s = (v === null || v === undefined) ? '' : String(v).trim();
+  if (!s) return '其他';
+  if (TYPES.indexOf(s) >= 0) return s;
+  if (/^\d+$/.test(s)) return VT_CODE_MAP[parseInt(s, 10)] || '其他';
+  if (VT_FIX_MAP[s]) return VT_FIX_MAP[s];
+  return '其他';
+}
 let currentBrandId = null;
 let allBrands = [];
 let chartTab1Disp, chartTab1Brands, chartTab1Price;
@@ -1071,7 +1085,7 @@ function baPhotoHTML(m, dsLabel) {
     '<div><div style="font-weight:600;font-size:13px;margin-bottom:2px;">' + (dsLabel ? dsLabel + ' ' : '') + (m.good_name || '') + '</div>' +
     '<div style="color:#aaa;font-size:11px;margin-bottom:2px;">' + tType(m.vehicle_type) + ' · ' + tEnergy(m.energy_label) + '</div>' +
     '<div style="color:#e94560;font-weight:600;font-size:13px;">' + fmtK(m.min_price) + '</div>' +
-    '<div style="color:#888;font-size:11px;">' + (extractDisp(m.good_name) || '-') + 'cc</div></div></div>';
+    '<div style="color:#888;font-size:11px;">' + (function(){ const _d = m.disp || extractDisp(m.good_name); return _d ? (_d + 'cc') : zhEn('排量未标注', 'N/A'); })() + '</div></div></div>';
 }
 function hdUrl(u) { return u ? u.replace('!official300', '!official600') : u; }
 // AI 抠图功能已移除（2026-09-12）：改为全程使用本地预生成的 cut_pic WebP，避免运行时加载 1.2MB imgly 模型与逐图去背景。
@@ -1258,11 +1272,15 @@ function baGeo() {
   return { S, slot, gap, cw, ch, fontPx, nameH, priceH, pad, cardH, bandH };
 }
 function baLayoutScatter(rows) {
+  // 无排量（多为电动/轻便摩托）用哨兵值 -1，归入「未标注」桶，避免整车系被丢弃导致图表空白
+  const NO_DISP = -1;
+  let anyNoDisp = false;
   const map = {};
   rows.forEach(m => {
     const dd = m.disp || extractDisp(m.good_name);
-    if (!dd || !m.vehicle_type) return;
-    (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd });
+    if (!m.vehicle_type) return;
+    if (!dd) anyNoDisp = true;
+    (map[m.vehicle_type] = map[m.vehicle_type] || []).push({ m, disp: dd || NO_DISP });
   });
 
   // 收集所有排量值
@@ -1275,6 +1293,7 @@ function baLayoutScatter(rows) {
 
   // 分段细桶：0-500cc 50cc/桶, 500-1000cc 100cc/桶, 1000+ 200cc/桶
   const buckets = [];
+  if (anyNoDisp) buckets.push({ min: -999, max: 0, label: zhEn('未标注', 'N/A') });
   for (let lo = 0; lo < yMax - 1e-6; ) {
     let st;
     if (lo < 500) st = 50;
@@ -1502,7 +1521,9 @@ function baShowPriceBucket(bk) {
 function baDrawProd(rows) {
   const cfg = baLayoutScatter(rows);
   const info = document.getElementById('baProdInfo');
-  info.textContent = zhEn('共 ' + cfg.pts.length + ' 款 · 卡片按排量(Y轴)摆放、同排量自动展开；悬停看大图，点击看详情', cfg.pts.length + ' models · placed by displacement (Y), overlaps spread; hover for photo, click for detail');
+  info.textContent = (cfg.pts && cfg.pts.length)
+    ? zhEn('共 ' + cfg.pts.length + ' 款 · 卡片按排量(Y轴)摆放、同排量自动展开；悬停看大图，点击看详情', cfg.pts.length + ' models · placed by displacement (Y), overlaps spread; hover for photo, click for detail')
+    : zhEn('暂无可绘制车型：该品牌下没有匹配当前筛选的车型数据', 'No models to draw under the current filter');
   baLoadPhotos(rows);
   baChartBox('baProdBox', cfg);
   const ac = baAxisCol();
@@ -1521,7 +1542,7 @@ function baDrawProd(rows) {
     {dl:t('dl_series'),dv:m.series_name||'-'},
     {dl:t('dl_vtype'),dv:tType(m.vehicle_type)},
     {dl:t('dl_energy'),dv:tEnergy(m.energy_label)},
-    {dl:t('dl_disp'),dv:((m.disp||extractDisp(m.good_name)||'')+'cc')},
+    {dl:t('dl_disp'),dv:(function(){const _d=m.disp||extractDisp(m.good_name);return _d?(_d+'cc'):zhEn('未标注','N/A');})()},
     {dl:t('dl_min'),dv:fmtK(m.min_price),cls:'price'},
     {dl:t('dl_max'),dv:fmtK(m.max_price),cls:'price'}
   ];
@@ -1542,7 +1563,7 @@ async function loadBaCompare() {
   const arrs = await Promise.all(resp.map(r => r.json()));
   const metas = uniq.map((bid, i) => { const rows = (arrs[i] || {}).models || []; return { bid, rows }; });
   const rows = [];
-  metas.forEach(d => d.rows.forEach(m => { const dd = m.disp || extractDisp(m.good_name); if (!dd) return; if (dmin && dd < dmin) return; if (dmax && dd > dmax) return; rows.push(m); }));
+  metas.forEach(d => d.rows.forEach(m => { const dd = m.disp || extractDisp(m.good_name); if (!dd && (dmin || dmax)) return; if (dd && dmin && dd < dmin) return; if (dd && dmax && dd > dmax) return; rows.push(m); }));
   if (!rows.length) {
     hint.textContent = zhEn('无匹配车型，请调整排量/能源筛选', 'No matching models - adjust displacement/energy filters');
     return;
@@ -1904,6 +1925,11 @@ async function localFetch(url, opts) {
     const resp = await _realFetch('./data.json');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     DATA = await resp.json();
+    // 数据清洗：统一车型类型标签 + 补齐排量，保证「品牌分析-车型照片分布」不会因脏值整片空白
+    (DATA.models || []).forEach(m => {
+      m.vehicle_type = normalizeType(m.vehicle_type);
+      if (!m.disp) m.disp = extractDisp(m.good_name);
+    });
     window.__APP_STATE = { ok: true, models: DATA.models.length, brands: DATA.brands.length, loadedAt: new Date().toISOString() };
   } catch(e) {
     const el = document.getElementById('topStats');
