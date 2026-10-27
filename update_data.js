@@ -410,17 +410,33 @@ async function main() {
     process.exit(1);
   }
   // 保护 2：相对上一次的跌幅（防止只抓到几十个品牌就把库覆盖成残缺版本）
+  // 基准来源取「上次原始抓取结果」与「仓库里已提交的 data.json」的较大者：
+  // CI 每次 checkout 都是干净的（58moto.db / models_raw_v2.json 均在 .gitignore），
+  // 只有 data.json 是入库的，必须拿它当基准，否则 CI 上这条保护会被静默跳过。
   try {
+    let baseline = 0;
     const prevPath = path.join(WS, 'models_raw_v2.json');
     if (fs.existsSync(prevPath)) {
       const prev = JSON.parse(fs.readFileSync(prevPath, 'utf-8'));
-      if (Array.isArray(prev) && prev.length > 0 && allModels.length < prev.length * 0.6) {
-        console.error(`\n❌ 本次 ${allModels.length} 款，仅为上次 ${prev.length} 款的 ${(allModels.length / prev.length * 100).toFixed(0)}%（低于 60%），疑似被 WAF 限流，放弃本次更新以免覆盖为残缺数据。`);
+      if (Array.isArray(prev) && prev.length > 0) baseline = prev.length;
+    }
+    const djPath = path.join(WS, 'data.json');
+    if (fs.existsSync(djPath)) {
+      const dj = JSON.parse(fs.readFileSync(djPath, 'utf-8'));
+      const n = Array.isArray(dj && dj.models) ? dj.models.length : 0;
+      if (n > baseline) baseline = n;
+    }
+    if (baseline > 0) {
+      console.log(`   跌幅校验基准：${baseline} 款`);
+      if (allModels.length < baseline * 0.6) {
+        console.error(`\n❌ 本次 ${allModels.length} 款，仅为基准 ${baseline} 款的 ${(allModels.length / baseline * 100).toFixed(0)}%（低于 60%），疑似被 WAF 限流，放弃本次更新以免覆盖为残缺数据。`);
         process.exit(1);
       }
+    } else {
+      console.log('   ⚠️ 未找到可用基准（models_raw_v2.json / data.json），跳过跌幅校验');
     }
   } catch (e) {
-    console.log('   ⚠️ 无法读取上一次的 models_raw_v2.json 做对比，跳过跌幅校验');
+    console.log('   ⚠️ 跌幅校验读取基准失败，跳过：' + (e && e.message ? e.message.slice(0, 80) : e));
   }
   
   fs.writeFileSync(path.join(WS, 'models_raw_v2.json'), JSON.stringify(allModels), 'utf-8');
