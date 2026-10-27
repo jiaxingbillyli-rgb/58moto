@@ -14,7 +14,7 @@
  *   - Node.js >= 16
  *   - puppeteer-core（npm install）
  *   - Microsoft Edge / Chrome（必须「有头」运行，无头会被 WAF 拦截）
- *   - Linux CI 需 xvfb：apt-get install -y xvfb，然后用 xvfb-run 启动本脚本
+ *   - Linux CI：脚本会检测 DISPLAY，若无则自动用 xvfb-run 拉起自己（需 apt-get install -y xvfb）
  *   - Python 3（用于构建数据库，需要 sqlite3 模块，标准库自带）
  *
  * WAF 说明（2026-10 改版后）：
@@ -30,13 +30,17 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 
 const WS = __dirname;
 
 // ---- 查找 Edge 浏览器 ----
 function findEdge() {
   if (process.env.EDGE_PATH && fs.existsSync(process.env.EDGE_PATH)) return process.env.EDGE_PATH;
+  // CI 常见：GitHub Actions 安装 google-chrome-stable 后写入该变量
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
   
   // 命令行参数
   const argIdx = process.argv.indexOf('--edge');
@@ -77,6 +81,38 @@ function findEdge() {
   } catch (e) {}
   
   return null;
+}
+
+/**
+ * Linux CI 保障「有头模式」：
+ * WAF 会拦截无头浏览器，headless:false 必须有可用的 DISPLAY。
+ * 若当前没有 DISPLAY 且系统装了 xvfb-run，就用 xvfb-run 重新拉起本脚本；
+ * 这样即使 CI 里忘了写 xvfb-run（或 workflow 文件没更新）也能正常跑。
+ */
+function ensureDisplay() {
+  if (process.platform !== 'linux') return;
+  if (process.env.DISPLAY) return;
+  if (process.env.__MOTO_XVFB === '1') return; // 已经由 xvfb 拉起过，避免死循环
+  
+  let hasXvfb = false;
+  try {
+    execSync('command -v xvfb-run', { stdio: 'ignore' });
+    hasXvfb = true;
+  } catch (e) {}
+  
+  if (!hasXvfb) {
+    console.warn('⚠️ 未检测到 DISPLAY 且系统没有 xvfb-run，将尝试直接启动有头浏览器（可能失败）');
+    console.warn('   建议在 CI 中执行：sudo apt-get install -y xvfb');
+    return;
+  }
+  
+  console.log('🖥 未检测到 DISPLAY，自动通过 xvfb-run 重新拉起本脚本（有头模式）...');
+  const r = spawnSync(
+    'xvfb-run',
+    ['-a', '--server-args=-screen 0 1920x1080x24', process.execPath, __filename, ...process.argv.slice(2)],
+    { stdio: 'inherit', env: { ...process.env, __MOTO_XVFB: '1' } }
+  );
+  process.exit(r.status === null ? 1 : r.status);
 }
 
 // ---- gradeGoodType → 车辆类型 映射 ----
@@ -215,6 +251,9 @@ async function gotoAndWait(page, url, timeout = 20000, resetSession = true) {
 // ---- 主流程 ----
 async function main() {
   const puppeteer = require('puppeteer-core');
+  
+  // Linux CI：没有 DISPLAY 就用 xvfb 重新拉起自己（WAF 需要真·有头）
+  ensureDisplay();
   
   const edgePath = findEdge();
   if (!edgePath) {
