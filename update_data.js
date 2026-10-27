@@ -13,8 +13,16 @@
  * 依赖：
  *   - Node.js >= 16
  *   - puppeteer-core（npm install）
- *   - Microsoft Edge（用于绕过阿里云 WAF）
+ *   - Microsoft Edge / Chrome（必须「有头」运行，无头会被 WAF 拦截）
+ *   - Linux CI 需 xvfb：apt-get install -y xvfb，然后用 xvfb-run 启动本脚本
  *   - Python 3（用于构建数据库，需要 sqlite3 模块，标准库自带）
+ *
+ * WAF 说明（2026-10 改版后）：
+ *   - 站点接入京东云 WAF：无头浏览器一律返回 __jdd403 拦截页，**必须用有头模式**
+ *   - 页面内 fetch() 会被 WAF 返回 405，所有数据只能靠真实 page.goto() 导航后读
+ *     <script id="__NEXT_DATA__"> 获取
+ *   - 老入口 /chexingku/ 已下线（405），品牌目录改从任意「有效品牌页」的
+ *     model.brandList 读取；部分历史 brandId（如 1、3）也已失效（405），需跳过
  * 
  * 环境变量：
  *   EDGE_PATH  可选，指定 Edge 可执行文件路径
@@ -114,17 +122,107 @@ function energyLabel(e) {
   return { 1: '燃油', 2: '电动', 3: '电动反充' }.get?.(n) || ({ 1: '燃油', 2: '电动', 3: '电动反充' }[n] || '其他');
 }
 
+// ---- WAF 适配工具 ----
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0';
+// 已知仍然有效的品牌 ID（用作抓取品牌目录的「种子页」），会依次尝试直到拿到 brandList
+const SEED_BRAND_IDS = [18, 44, 9, 267, 201, 208, 470, 24, 212, 383, 449, 3, 1];
+
+// 读取当前页的 __NEXT_DATA__，区分多种状态；
+// WAF 挑战页会自动重载，导致 evaluate 抛「Execution context was destroyed」，需重试
+async function readNextModel(page, tries = 6) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await page.evaluate(() => {
+        const el = document.querySelector('script#__NEXT_DATA__');
+        if (!el) return { state: 'missing' };
+        let d = null;
+        try { d = JSON.parse(el.textContent); } catch (e) { return { state: 'badjson' }; }
+        const pp = d.props && d.props.pageProps;
+        if (!pp) return { state: 'noprops' };
+        if (pp.__jdd403) return { state: 'waf' };
+        return { state: 'ok', model: pp.model || {} };
+      });
+    } catch (e) {
+      const msg = String((e && e.message) || '');
+      if (/Execution context was destroyed|Cannot find context|Target closed|detached/i.test(msg)) {
+        await new Promise(r => setTimeout(r, 700));
+        continue;
+      }
+      return { state: 'err', msg: msg.slice(0, 60) };
+    }
+  }
+  return { state: 'ctxlost' };
+}
+
+// 带退避重试的导航：405 / WAF 拦截时逐步加长等待再试
+// （京东云 WAF 对同一 IP 有短期频率限制：连续快速访问约 20 个品牌页后会开始返 405）
+const BACKOFF_MS = [2500, 6000, 15000, 30000, 45000];
+async function gotoBrandWithRetry(page, url, maxRetry = 5) {
+  let res = null;
+  for (let attempt = 0; attempt < maxRetry; attempt++) {
+    res = await gotoAndWait(page, url, 15000);
+    if (res.state === 'ok') return res;
+    const wait = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
+    await new Promise(r => setTimeout(r, wait));
+  }
+  return res;
+}
+
+// 真实导航 + 等待 WAF 放行（挑战页会自动重新加载，需轮询）
+//
+// 关键：京东云 WAF 的会话令牌「一次导航即失效」，第二次访问任意 /brand/ 页面都会 405。
+// 解决办法是每次导航前清空 cookie，强制 WAF 重新下发挑战并颁发新令牌（实测有效）。
+let _cdpReady = false;
+async function resetWafSession(page) {
+  try {
+    if (!_cdpReady) {
+      page._cdp = await page.target().createCDPSession();
+      _cdpReady = true;
+    }
+    await page._cdp.send('Network.clearBrowserCookies');
+  } catch (e) {
+    // 退化方案：只删当前页可见的 cookie
+    try { const cj = await page.cookies(); if (cj.length) await page.deleteCookie(...cj); } catch (e2) {}
+  }
+}
+
+async function gotoAndWait(page, url, timeout = 20000, resetSession = true) {
+  if (resetSession) await resetWafSession(page);
+  let status = 0;
+  let navErr = '';
+  try {
+    // networkidle2 等 WAF 挑战触发的自动重载结束；domcontentloaded 会过早返回
+    const r = await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+    status = r ? r.status() : 0;
+  } catch (e) {
+    status = 0;
+    navErr = String((e && e.message) || e).split('\n')[0].slice(0, 90);
+  }
+  if (navErr) console.log(`      ↳ goto 异常: ${navErr}`);
+  // 明确的失效路由（品牌已下线等）不必等
+  if (status === 404 || status === 405 || status === 410) return { status, state: 'http' };
+  await new Promise(r => setTimeout(r, 600));
+  const t0 = Date.now();
+  let st = { state: 'missing' };
+  while (Date.now() - t0 < timeout) {
+    st = await readNextModel(page);
+    if (st.state === 'ok') return { status, ...st };
+    await new Promise(r => setTimeout(r, st.state === 'waf' ? 1200 : 500));
+  }
+  return { status, ...st };
+}
+
 // ---- 主流程 ----
 async function main() {
   const puppeteer = require('puppeteer-core');
   
   const edgePath = findEdge();
   if (!edgePath) {
-    console.error('❌ 未找到 Microsoft Edge 浏览器！');
+    console.error('❌ 未找到 Edge / Chrome 浏览器！');
     console.error('   请通过 --edge 参数指定路径，或设置 EDGE_PATH 环境变量');
     process.exit(1);
   }
-  console.log('✅ Edge 路径:', edgePath);
+  console.log('✅ 浏览器路径:', edgePath);
   
   // Step 1: 抓取品牌目录
   console.log('\n📋 Step 1/3: 抓取品牌目录...');
@@ -133,96 +231,112 @@ async function main() {
     browserPath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
+  // 关键：WAF 会拦截无头浏览器，必须 headless:false（CI 上用 xvfb-run 提供虚拟显示）
   const browser = await puppeteer.launch({
     executablePath: browserPath,
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--disable-setuid-sandbox'],
+    headless: false,
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: [
+      '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+      '--disable-blink-features=AutomationControlled',
+      '--window-size=1440,900',
+    ],
   });
   
   const page = await browser.newPage();
-  await page.setViewport({ width: 1400, height: 900 });
-  
-  // 访问任意品牌页获取 WAF cookie + brandList
-  console.log('   访问 58moto.com 过 WAF...');
-  await page.goto('https://www.58moto.com/chexingku/', { waitUntil: 'networkidle2', timeout: 60000 });
-  await new Promise(r => setTimeout(r, 3000));
-  
-  // 从首页或品牌页提取品牌目录
-  // 先尝试从页面 HTML 提取 __NEXT_DATA__
-  const brandDir = await page.evaluate(async () => {
-    // 尝试访问一个品牌页获取 brandList
-    const r = await fetch('https://www.58moto.com/brand/A-1.html', { credentials: 'include', cache: 'no-store' });
-    const text = await r.text();
-    const m = text.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-    if (!m) return null;
-    const data = JSON.parse(m[1]);
-    const model = data.props?.pageProps?.model;
-    if (!model || !model.brandList) return null;
-    
-    const brands = {};
-    for (const grp of model.brandList) {
-      for (const b of grp.brands) {
-        brands[b.brandId] = {
-          brandId: b.brandId,
-          brandName: b.brandName,
-          spelling: b.spelling || '',
-          aleph: b.aleph || '',
-          energyType: b.brandEnergyType || '',
-          existSaleGoods: b.existSaleGoods,
-          keywords: b.keywords || '',
-          logo: b.brandLogo || '',
-        };
-      }
-    }
-    
-    // 从导航链接获取 URL
-    const navUrls = {};
-    const aRe = /href="(\/brand\/[A-Z]-(\d+)\.html)"/g;
-    let am;
-    while ((am = aRe.exec(text)) !== null) {
-      navUrls[parseInt(am[2])] = 'https://www.58moto.com' + am[1];
-    }
-    
-    const directory = [];
-    for (const id of Object.keys(brands)) {
-      directory.push({ ...brands[id], url: navUrls[id] || `https://www.58moto.com/brand/A-${id}.html` });
-    }
-    return directory;
+  page.setDefaultNavigationTimeout(45000);
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.setUserAgent(BROWSER_UA);
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+    Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+    if (!window.chrome) window.chrome = {};
   });
   
+  // 逐个尝试种子品牌页，拿到 model.brandList（/chexingku/ 已下线 405）
+  let brandDir = null;
+  let seedId = null;
+  for (const sid of SEED_BRAND_IDS) {
+    const url = `https://www.58moto.com/brand/A-${sid}.html`;
+    const res = await gotoAndWait(page, url, 25000);
+    if (res.state === 'ok' && res.model && res.model.brandList) {
+      const brands = {};
+      for (const grp of res.model.brandList) {
+        for (const b of (grp.brands || [])) {
+          brands[b.brandId] = {
+            brandId: b.brandId,
+            brandName: b.brandName,
+            spelling: b.spelling || '',
+            aleph: b.aleph || '',
+            energyType: b.brandEnergyType || '',
+            existSaleGoods: b.existSaleGoods,
+            keywords: b.keywords || '',
+            logo: b.brandLogo || '',
+          };
+        }
+      }
+      // 顺带收集页面上出现的品牌链接，覆盖非 A- 前缀的 URL
+      const navUrls = await page.evaluate(() => {
+        const m = {};
+        document.querySelectorAll('a[href]').forEach(a => {
+          const h = a.getAttribute('href') || '';
+          const mm = h.match(/^\/brand\/([A-Z])-(\d+)\.html/);
+          if (mm) m[parseInt(mm[2])] = 'https://www.58moto.com' + mm[0];
+        });
+        return m;
+      });
+      brandDir = Object.keys(brands).map(id => ({
+        ...brands[id],
+        url: navUrls[id] || `https://www.58moto.com/brand/A-${id}.html`,
+      }));
+      seedId = sid;
+      break;
+    }
+    console.log(`   种子品牌 A-${sid} 不可用（state=${res.state} http=${res.status}），换下一个...`);
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  
   if (!brandDir || brandDir.length === 0) {
-    console.error('❌ 无法获取品牌目录！网站可能改版或 WAF 拦截。');
+    console.error('❌ 无法获取品牌目录！所有种子品牌页均被 WAF 拦截或已失效。');
     await browser.close();
     process.exit(1);
   }
   
   fs.writeFileSync(path.join(WS, 'brand_directory.json'), JSON.stringify(brandDir, null, 1), 'utf-8');
-  const saleBrands = brandDir.filter(b => b.existSaleGoods === 1);
-  console.log(`   ✅ 品牌目录: ${brandDir.length} 个品牌，${saleBrands.length} 个有在售车型`);
+  let saleBrands = brandDir.filter(b => b.existSaleGoods === 1);
+  const MAX_BRANDS = parseInt(process.env.MAX_BRANDS || '0', 10);
+  if (MAX_BRANDS > 0) saleBrands = saleBrands.slice(0, MAX_BRANDS);
+  console.log(`   ✅ 品牌目录: ${brandDir.length} 个品牌，${saleBrands.length} 个有在售车型（种子页 A-${seedId}）`);
   
-  // Step 2: 逐品牌抓取车型
+  // Step 2: 逐品牌抓取车型（必须真实导航，WAF 会拦截页面内 fetch）
   console.log(`\n🏍️  Step 2/3: 抓取 ${saleBrands.length} 个品牌的车型数据...`);
   const allModels = [];
+  let skipped = 0, wafHits = 0;
+  const t0 = Date.now();
   
   for (let i = 0; i < saleBrands.length; i++) {
     const brand = saleBrands[i];
-    const url = `https://www.58moto.com/brand/A-${brand.brandId}.html`;
-    
+    // 基础礼节间隔：WAF 对同 IP 有约 20 次/分钟的短期频率限制
+    if (i > 0) await new Promise(r => setTimeout(r, 3000));
+    // 每 20 个品牌集中冷却一次，避免累计触发限流
+    if (i > 0 && i % 20 === 0) {
+      console.log(`   ⏸  已抓 ${i} 个品牌，冷却 25s 规避 WAF 限流...`);
+      await new Promise(r => setTimeout(r, 25000));
+    }
     try {
-      const resp = await page.evaluate(async (url) => {
-        const r = await fetch(url);
-        const text = await r.text();
-        const m = text.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-        if (!m) return null;
-        return JSON.parse(m[1]);
-      }, url);
-      
-      if (!resp || !resp.props?.pageProps?.model?.goodList) {
-        console.log(`   [${i+1}/${saleBrands.length}] ${brand.brandName}: 无数据`);
+      const res = await gotoBrandWithRetry(page, brand.url);
+      if (res.state !== 'ok') {
+        skipped++;
+        if (res.state === 'waf') wafHits++;
+        if (skipped <= 8) console.log(`   [${i+1}/${saleBrands.length}] ${brand.brandName}: 跳过（${res.state} http=${res.status}）`);
         continue;
       }
-      
-      const goodList = resp.props.pageProps.model.goodList;
+      const goodList = res.model.goodList;
+      if (!goodList || !goodList.length) {
+        skipped++;
+        continue;
+      }
       for (const g of goodList) {
         allModels.push({
           goodId: g.goodId, goodName: g.goodName, carName: g.carName || '',
@@ -238,16 +352,37 @@ async function main() {
           tags: g.tags || '',
         });
       }
-      console.log(`   [${i+1}/${saleBrands.length}] ${brand.brandName} (id=${brand.brandId}): ${goodList.length} 款`);
+      if ((i + 1) % 25 === 0 || i === saleBrands.length - 1) {
+        const el = ((Date.now() - t0) / 1000).toFixed(0);
+        console.log(`   ...${i+1}/${saleBrands.length}（累计 ${allModels.length} 款，跳过 ${skipped}，用时 ${el}s）`);
+      }
     } catch (e) {
-      console.log(`   [${i+1}/${saleBrands.length}] ${brand.brandName} ERROR: ${e.message}`);
+      skipped++;
+      console.log(`   [${i+1}/${saleBrands.length}] ${brand.brandName} ERROR: ${e.message.slice(0,60)}`);
     }
-    
-    // 礼貌延迟
-    if ((i + 1) % 10 === 0) await new Promise(r => setTimeout(r, 500));
   }
+  console.log(`   抓取结束：有效品牌 ${saleBrands.length - skipped} / ${saleBrands.length}，其中 WAF 拦截 ${wafHits}`);
   
   await browser.close();
+  
+  // 保护 1：绝对下限
+  if (allModels.length < 1000) {
+    console.error(`\n❌ 仅抓到 ${allModels.length} 款车型（阈值 1000），疑似被 WAF 大面积拦截，放弃本次更新以免覆盖线上数据。`);
+    process.exit(1);
+  }
+  // 保护 2：相对上一次的跌幅（防止只抓到几十个品牌就把库覆盖成残缺版本）
+  try {
+    const prevPath = path.join(WS, 'models_raw_v2.json');
+    if (fs.existsSync(prevPath)) {
+      const prev = JSON.parse(fs.readFileSync(prevPath, 'utf-8'));
+      if (Array.isArray(prev) && prev.length > 0 && allModels.length < prev.length * 0.6) {
+        console.error(`\n❌ 本次 ${allModels.length} 款，仅为上次 ${prev.length} 款的 ${(allModels.length / prev.length * 100).toFixed(0)}%（低于 60%），疑似被 WAF 限流，放弃本次更新以免覆盖为残缺数据。`);
+        process.exit(1);
+      }
+    }
+  } catch (e) {
+    console.log('   ⚠️ 无法读取上一次的 models_raw_v2.json 做对比，跳过跌幅校验');
+  }
   
   fs.writeFileSync(path.join(WS, 'models_raw_v2.json'), JSON.stringify(allModels), 'utf-8');
   console.log(`\n   ✅ 总车型数: ${allModels.length}`);

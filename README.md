@@ -6,7 +6,7 @@
 
 数据由 [GitHub Actions](.github/workflows/crawl.yml) 自动维护：
 
-- **每周一 UTC 02:00（北京时间 10:00）自动跑**一次爬虫
+- **每周日 UTC 16:00（北京时间周一 00:00）自动跑**一次爬虫
 - 也可从 GitHub Actions 页面手动触发
 
 工作流：
