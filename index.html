@@ -79,6 +79,8 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:#0a0a0a;
 .chart-container h3 { font-size:16px; margin-bottom:12px; color:#fff; }
 .chart-sub-filter { margin-bottom:12px; }
 .chart-sub-filter select { padding:6px 10px; background:#0a0a0a; color:#e8e8e8; border:1px solid #333; border-radius:6px; font-size:13px; }
+.chart-sub-filter select:disabled { opacity:0.45; }
+.chart-hint { color:#999; font-size:12px; margin-left:6px; }
 .scroll-table { max-height:600px; overflow-y:auto; }
 .stats-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; margin-bottom:16px; }
 .stat-card { background:#141414; padding:16px; border-radius:8px; border:1px solid rgba(238,49,36,0.15); text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.5); }
@@ -335,11 +337,13 @@ img[src*="/cut/"]{background:#fff;}
 <div class="panel" id="panel-filter">
   <div class="filter-bar">
     <label data-i18n="lbl_brand">品牌</label>
-    <select id="brandFilter2" onchange="loadFilteredModels()"><option value="">不限</option></select>
+    <select id="brandFilter2" onchange="loadFilteredModels()"><option value="" data-i18n="opt_all">不限</option></select>
     <label data-i18n="lbl_type">车辆类型</label>
-    <select id="typeFilter2" onchange="loadFilteredModels()"><option value="">不限</option></select>
+    <select id="typeFilter2" onchange="loadFilteredModels()"><option value="" data-i18n="opt_all">不限</option></select>
     <label data-i18n="lbl_energy">能源</label>
-    <select id="energyFilter2" onchange="loadFilteredModels()"><option value="">不限</option><option value="燃油" data-i18n="opt_fuel">燃油</option><option value="电动" data-i18n="opt_elec">电动</option></select>
+    <select id="energyFilter2" onchange="loadFilteredModels()"><option value="" data-i18n="opt_all">不限</option><option value="燃油" data-i18n="opt_fuel">燃油</option><option value="电动" data-i18n="opt_elec">电动</option></select>
+    <label data-i18n="lbl_origin">产地</label>
+    <select id="originFilter2" onchange="loadFilteredModels()"><option value="" data-i18n="opt_all">不限</option><option value="dom" data-i18n="opt_domestic">国产</option><option value="imp" data-i18n="opt_import">进口</option></select>
     <label data-i18n="lbl_disp">排量(cc)</label>
     <input type="number" id="minDisp2" placeholder="最小" style="width:60px">
     <span>-</span>
@@ -365,13 +369,58 @@ img[src*="/cut/"]{background:#fff;}
       <tbody id="modelTbody2"></tbody>
     </table>
   </div>
-  <!-- 价格矩阵图 -->
-  <div class="matrix-container">
-    <h3 data-i18n="matrix_title">📊 价格矩阵图（品牌 × 价格区间）</h3>
-    <div id="matrixWrapper2"></div>
-    <div class="chart-models-panel" id="matrixModelsPanel2">
-      <h4 id="matrixModelsTitle2"></h4>
-      <div id="matrixModelsContent2"></div>
+  <!-- ① 排量 → 平均售价（150cc 起，每 50cc 一档，最高 1300cc） -->
+  <div class="chart-container">
+    <h3 data-i18n="t2_disp_price_title">📊 各排量平均售价（150cc 起 · 每 50cc 一档 · 上限 1300cc）</h3>
+    <div class="chart-sub-filter">
+      <label data-i18n="lbl_chart_type">图表形式：</label>
+      <select id="t2DispChartType" onchange="renderTab2Charts()">
+        <option value="bar" data-i18n="opt_bar">柱状图</option>
+        <option value="line" data-i18n="opt_line">折线图</option>
+      </select>
+      <span class="chart-hint" data-i18n="t2_disp_price_hint">就近归并：220cc→200cc，230cc→250cc，225cc→250cc</span>
+    </div>
+    <canvas id="chartDispPrice2" height="110"></canvas>
+    <div class="chart-models-panel" id="dispPricePanel2">
+      <h4 id="dispPriceTitle2"></h4>
+      <div id="dispPriceContent2"></div>
+    </div>
+  </div>
+
+  <!-- ② 维度均价：品牌 / 国产或进口 / 排量区间 -->
+  <div class="chart-container">
+    <h3 data-i18n="t2_avg_title">📈 平均售价分析（品牌 / 国产或进口 / 排量区间）</h3>
+    <div class="chart-sub-filter">
+      <label data-i18n="lbl_dim">维度：</label>
+      <select id="t2AvgDimSel" onchange="onAvgDimChange()">
+        <option value="brand" data-i18n="dim_brand">品牌</option>
+        <option value="origin" data-i18n="dim_origin">国产 / 进口</option>
+        <option value="range" data-i18n="dim_disp_range">排量区间</option>
+      </select>
+      <label data-i18n="lbl_range">排量区间：</label>
+      <select id="t2AvgRangeSel" onchange="renderTab2Charts()">
+        <option value="" data-i18n="opt_all">不限</option>
+        <option value="150-200">150-200cc</option>
+        <option value="200-250">200-250cc</option>
+        <option value="250-400">250-400cc</option>
+        <option value="400-500">400-500cc</option>
+        <option value="500-800">500-800cc</option>
+        <option value="800+" data-i18n="opt_range_800">800cc 以上</option>
+      </select>
+      <label data-i18n="lbl_chart_type">图表形式：</label>
+      <select id="t2AvgChartType" onchange="renderTab2Charts()">
+        <option value="bar" data-i18n="opt_bar">柱状图</option>
+        <option value="line" data-i18n="opt_line">折线图</option>
+      </select>
+      <label data-i18n="lbl_topn">显示数量：</label>
+      <select id="t2AvgTopN" onchange="renderTab2Charts()">
+        <option value="10">Top 10</option><option value="15">Top 15</option><option value="20" selected>Top 20</option><option value="30">Top 30</option><option value="50">Top 50</option>
+      </select>
+    </div>
+    <canvas id="chartAvgPrice2" height="110"></canvas>
+    <div class="chart-models-panel" id="avgPricePanel2">
+      <h4 id="avgPriceTitle2"></h4>
+      <div id="avgPriceContent2"></div>
     </div>
   </div>
 </div>
@@ -499,7 +548,12 @@ const I18N = {
   zh: {
     app_title:'🏍️ 58moto 摩托车车型数据库',
     tab_brand:'按品牌选车', tab_filter:'类型+排量筛选', tab_analysis:'排量分析', tab_brandlist:'品牌列表', tab_brandanalysis:'品牌分析', ba_price_title:'① 价格分布（售价 K CNY）', ba_prod_title:'② 产品分布：车辆类型 × 排量', ba_cmp_title:'③ 品牌对比（2-4 品牌 · 类型 × 排量）', ba_cmp_btn:'生成对比图', ba_cmp_hint:'请选择 2-4 个品牌后点击对比', ba_cut_btn:'✂️ 抠图', ba_cut_on:'AI 抠图中', ba_cut_off:'抠图已关', ba_cut_loading:'加载 AI 模型…',
-    lbl_brand:'品牌', lbl_type:'车辆类型', lbl_energy:'能源', lbl_disp:'排量(cc)', lbl_sort:'排序', lbl_price:'价格(元)', lbl_keyword:'关键词', lbl_vtype:'车型类型：',
+    lbl_brand:'品牌', lbl_type:'车辆类型', lbl_energy:'能源', lbl_disp:'排量(cc)', lbl_sort:'排序', lbl_price:'价格(元)', lbl_keyword:'关键词', lbl_vtype:'车型类型：', lbl_origin:'产地', lbl_dim:'维度', lbl_range:'排量区间', lbl_topn:'显示数量', lbl_chart_type:'图表形式',
+    opt_domestic:'国产', opt_import:'进口', opt_range_800:'800cc 以上', opt_bar:'柱状图', opt_line:'折线图',
+    dim_brand:'品牌', dim_origin:'国产 / 进口', dim_disp_range:'排量区间',
+    t2_disp_price_title:'📊 各排量平均售价（150cc 起 · 每 50cc 一档 · 上限 1300cc）',
+    t2_disp_price_hint:'就近归并：220cc→200cc，230cc→250cc，225cc→250cc',
+    t2_avg_title:'📈 平均售价分析（品牌 / 国产或进口 / 排量区间）',
     btn_filter:'筛选', btn_reset:'重置',
     opt_all:'不限', opt_all_type:'全部', opt_fuel:'燃油', opt_elec:'电动',
     sort_asc:'价格↑', sort_desc:'价格↓', sort_name:'名称',
@@ -519,7 +573,12 @@ const I18N = {
   en: {
     app_title:'🏍️ 58moto Motorcycle Database',
     tab_brand:'By Brand', tab_filter:'Type + Displacement', tab_analysis:'Displacement Analysis', tab_brandlist:'Brand List', tab_brandanalysis:'Brand Analysis', ba_price_title:'① Price Distribution (K CNY)', ba_prod_title:'② Product Map: Type × Displacement', ba_cmp_title:'③ Brand Comparison (2-4 Brands · Type × Displacement)', ba_cmp_btn:'Compare', ba_cmp_hint:'Select 2-4 brands then click Compare', ba_cut_btn:'✂️ Cutout', ba_cut_on:'AI cutout…', ba_cut_off:'Cutout off', ba_cut_loading:'Loading AI model…',
-    lbl_brand:'Brand', lbl_type:'Vehicle Type', lbl_energy:'Energy', lbl_disp:'Displacement(cc)', lbl_sort:'Sort', lbl_price:'Price(¥)', lbl_keyword:'Keyword', lbl_vtype:'Vehicle Type: ',
+    lbl_brand:'Brand', lbl_type:'Vehicle Type', lbl_energy:'Energy', lbl_disp:'Displacement(cc)', lbl_sort:'Sort', lbl_price:'Price(¥)', lbl_keyword:'Keyword', lbl_vtype:'Vehicle Type: ', lbl_origin:'Origin', lbl_dim:'Dimension', lbl_range:'Disp. Range', lbl_topn:'Show', lbl_chart_type:'Chart Type',
+    opt_domestic:'Domestic', opt_import:'Import', opt_range_800:'800cc+', opt_bar:'Bar', opt_line:'Line',
+    dim_brand:'Brand', dim_origin:'Domestic / Import', dim_disp_range:'Disp. Range',
+    t2_disp_price_title:'📊 Average Price by Displacement (from 150cc · 50cc steps · max 1300cc)',
+    t2_disp_price_hint:'Round to nearest: 220cc→200cc, 230cc→250cc, 225cc→250cc',
+    t2_avg_title:'📈 Average Price Analysis (Brand / Domestic-Import / Disp. Range)',
     btn_filter:'Filter', btn_reset:'Reset',
     opt_all:'All', opt_all_type:'All', opt_fuel:'Fuel', opt_elec:'Electric',
     sort_asc:'Price ↑', sort_desc:'Price ↓', sort_name:'Name',
@@ -551,12 +610,28 @@ const BRAND_EN_EXTRA = {'华洋':'Huayang','虬龙':'Qiulong','木兰':'Mulan','
 // 合并
 for(var k in BRAND_EN_EXTRA){ BRAND_EN[k] = BRAND_EN_EXTRA[k]; }
 
+// ===================== 产地：进口 / 国产 =====================
+// 判定原则（按中国摩托车市场惯例）：
+//   · 进口 imp = 境外品牌（日/欧/美/台/韩/印等）以整车进口方式在国内销售，如 本田、雅马哈、川崎、铃木、杜卡迪、宝马、哈雷、凯旋、KTM、光阳、三阳…
+//   · 国产 dom = 中国本土品牌，以及在国内合资生产的中外合资品牌（新大洲本田、五羊本田、豪爵铃木、建设雅马哈、济南铃木、宗申比亚乔/阿普利亚…）
+//   · 未收录品牌：中文名默认国产，纯拉丁字母名默认进口（下方 BRAND_DOMESTIC_LATIN 列出中国品牌的拉丁写法以纠偏）
+const BRAND_IMPORT = new Set(('雅马哈 川崎 杜卡迪 铃木 本田 宝马 摩托古兹 凯旋 阿普利亚 奥古斯塔 光阳 晓星 KTMR2R HUSQVARNA HUSABERG BIMOTA VESPA 哈雷戴维森 比亚乔 庞巴迪 标致 印第安 北极星 ROYAL ALLOY 乌拉尔 ADIVA MUTT ZERO 宏佳腾 创新三阳 三阳SYM 斯威洛VELOCIFERO LAMBRETTA兰美达 博速 现代 特斯拉 兰博基尼 阿斯顿·马丁 胜利 道奇 UK CONFEDERATE PGO ENERGICA 巴贾杰 HOREX 诺顿 布尔 贝塔 EBR PHANTOM 皇家恩菲尔德 ROEHR 大林 德比 MEGELLI LAZARETH VELOCETTE 吉雷拉 JAWA KEEWAY RMK HERALD HERO TM RACING 意塔杰特ITALJET ARIEL UM OHVALE VENT VINS BRIXTON MALAGUTI ARCH BULLIT QOODER GASGAS 哈特佛 台田TAITONDA TRAVERTSON ROKON HOOKIE LIGHTNING GOGORO MASH LIVEWIRE 卡吉瓦MVCAGIVA FUELL 本田E FANTIC GPX ELECTRA MECCAICA CAGIVA VMOTO BROUGH SUPERIOR EVOKE 特斯拉 G GINIO').split(/\s+/).filter(Boolean));
+const BRAND_DOMESTIC_LATIN = new Set(('QJMOTOR QJETECH MBY MOTA BGB ROMO ATN NLP AJ1 GOWOW MINFF YNMTC AKMOTOR KAMAX 79BIKE YSW DIMEN LYVA XCOL SARKCYBER OMOWAY MOTOFINO AODES X-IDEA iCAR AW SWM 号外HORWIN 探骊TALARIA 新威骑X-WEDGE HOTO红驼动力 斐兔FELO 雷电THUNDER CUSTOM 雅典娜ATHENA 易伟特Y-VOLT 时间TIME SKYMOTOR首驱 阿雷纳ARENA 香帅机车MARSHAL').split(/\s+/).filter(Boolean));
+function brandOrigin(name) {
+  if (!name) return 'dom';
+  if (BRAND_IMPORT.has(name)) return 'imp';
+  if (BRAND_DOMESTIC_LATIN.has(name)) return 'dom';
+  return /[\u4e00-\u9fa5]/.test(name) ? 'dom' : 'imp';
+}
+function originLabel(o) { return o === 'imp' ? zhEn('进口', 'Import') : zhEn('国产', 'Domestic'); }
+
 // ===================== Chart.js 自定义插件 =====================
 // 柱状图：在柱上直接显示数量（无需 hover）
 const barValueLabels = {
   id:'barValueLabels',
   afterDatasetsDraw(chart, args, opts){
     if(chart.config.type!=='bar') return;
+    if(opts && opts.enabled === false) return;
     const {ctx} = chart;
     const horizontal = chart.options.indexAxis === 'y';
     ctx.save();
@@ -661,7 +736,7 @@ function switchTab(name) {
   if(name==='analysis') { loadAnalysis(); }
   if(name==='brandlist') loadBrandList();
   if(name==='brand') loadTab1();
-  if(name==='filter') loadMatrix2();
+  if(name==='filter') loadFilteredModels();
   if(name==='brandanalysis') loadBaTab();
 }
 
@@ -842,55 +917,256 @@ function showPriceDetail(m) {
     ${m.good_pic?`<div style="margin-top:8px"><img src="${baImgUrl(m)}" style="height:90px;border-radius:6px;background:#fff"></div>`:''}`;
   document.getElementById('matrixModelsPanel1').classList.add('active');
 }
-async function loadMatrix2() {
-  const params = new URLSearchParams();
-  const t=document.getElementById('typeFilter2').value; if(t && t!=='不限') params.set('type',t);
-  const e=document.getElementById('energyFilter2').value; if(e && e!=='不限') params.set('energy',e);
-  const bid=document.getElementById('brandFilter2').value; if(bid) params.set('brand_id',bid);
-  const md=document.getElementById('minDisp2').value; if(md) params.set('min_disp',md);
-  const xd=document.getElementById('maxDisp2').value; if(xd) params.set('max_disp',xd);
-  const r = await fetch('/api/price-matrix?'+params);
-  const d = await r.json();
-  renderMatrix('matrixWrapper2', 'matrixModelsPanel2', 'matrixModelsTitle2', 'matrixModelsContent2', d);
+// 旧「价格矩阵图」已由①排量均价图与②维度均价图替代
+// ---------- Tab2 ① 排量 → 平均售价 ----------
+// 档位：150cc 起，每 50cc 一档，最大 1300cc；就近归并（225 → 250，向上取整）
+const T2_DISP_MIN = 150, T2_DISP_STEP = 50, T2_DISP_MAX = 1300;
+const T2_DISP_BUCKETS = (function(){ const a=[]; for(let v=T2_DISP_MIN; v<=T2_DISP_MAX; v+=T2_DISP_STEP) a.push(v); return a; })();
+const T2_DISP_BUCKET_MAX_IDX = T2_DISP_BUCKETS.length - 1;
+function dispBucket(d) {
+  if (d == null || !isFinite(d)) return null;
+  let idx = Math.round((d - T2_DISP_MIN) / T2_DISP_STEP);   // 220→200, 230→250, 225→250
+  if (idx < 0) idx = 0;
+  if (idx > T2_DISP_BUCKET_MAX_IDX) idx = T2_DISP_BUCKET_MAX_IDX;
+  return T2_DISP_BUCKETS[idx];
 }
-let _mxStore = {};
-let _mxId = 0;
-function renderMatrix(wrapperId, panelId, titleId, contentId, d) {
-  let html = '<table class="matrix-table"><thead><tr>';
-  html += '<th class="brand-col">\u54c1\u724c</th>';
-  d.price_ranges.forEach(function(r) { html += '<th>' + r + '</th>'; });
-  html += '<th>\u603b\u8ba1</th></tr></thead><tbody>';
-  d.matrix.forEach(function(row) {
-    html += '<tr><td class="brand-col">' + tBrand(row.brand) + '</td>';
-    row.cells.forEach(function(c, i) {
-      const rl = d.price_ranges[i];
-      const models = row.models && row.models[rl] ? row.models[rl] : [];
-      const key = 'mx_' + (++_mxId);
-      _mxStore[key] = {panelId:panelId, titleId:titleId, contentId:contentId, brand:row.brand, range:rl, models:models};
-      const tt = models.length > 0 ? models.map(function(m){return m.name+' '+fmtPrice(m.price);}).slice(0,5).join(', ') : '';
-      html += '<td class="' + cellClass(c) + '" onclick="showMX(\''+key+'\')" title="' + tt.replace(/"/g,'&quot;') + '">' + (c||'') + '</td>';
+function dispBucketLabel(v, i) {
+  if (i === 0) return zhEn('≤' + v, '≤' + v);
+  if (i === T2_DISP_BUCKET_MAX_IDX) return v + '+';
+  return String(v);
+}
+// 排量区间（用户指定的 6 段）
+const T2_DISP_RANGES = [
+  { key:'150-200', lo:150, hi:200 },
+  { key:'200-250', lo:200, hi:250 },
+  { key:'250-400', lo:250, hi:400 },
+  { key:'400-500', lo:400, hi:500 },
+  { key:'500-800', lo:500, hi:800 },
+  { key:'800+',    lo:800, hi:Infinity }
+];
+function dispRangeKey(d) {
+  if (d == null || !isFinite(d)) return null;
+  for (let i = 0; i < T2_DISP_RANGES.length; i++) { const r = T2_DISP_RANGES[i]; if (d >= r.lo && d < r.hi) return r.key; }
+  return null;
+}
+function dispRangeLabel(k) {
+  const r = T2_DISP_RANGES.filter(x => x.key === k)[0];
+  if (!r) return k;
+  return r.hi === Infinity ? zhEn('800cc 以上', '800cc+') : (r.lo + '-' + r.hi + 'cc');
+}
+function modelDisp(m) { const d = m.disp; return (d != null && d !== '' && Number(d) > 0) ? Number(d) : extractDisp(m.good_name); }
+function modelPrice(m) { const p = Number(m.min_price); return (isFinite(p) && p > 0) ? p : null; }
+
+let _tab2Models = [];
+const _t2DispStore = {}, _t2AvgStore = {};
+const _chartDispPrice2 = { chart: null }, _chartAvgPrice2 = { chart: null };
+let _t2Id = 0;
+
+function avgOf(list) { if (!list.length) return 0; return Math.round(list.reduce((a, b) => a + b, 0) / list.length); }
+
+function renderTab2Charts() {
+  renderDispPrice2(_tab2Models || []);
+  renderAvgPrice2(_tab2Models || []);
+}
+function onAvgDimChange() {
+  const dim = document.getElementById('t2AvgDimSel').value;
+  const rs = document.getElementById('t2AvgRangeSel');
+  rs.disabled = (dim === 'range');
+  if (dim === 'range') rs.value = '';
+  renderTab2Charts();
+}
+
+function _mkOrUpdate(canvasId, cfg, store) {
+  const cv = document.getElementById(canvasId);
+  if (!cv) return null;
+  const prev = store.chart;
+  if (prev) { try { prev.destroy(); } catch(e) {} }
+  store.chart = new Chart(cv.getContext('2d'), cfg);
+  return store.chart;
+}
+
+function renderDispPrice2(rows) {
+  const orgSel = document.getElementById('originFilter2');
+  const org = orgSel ? orgSel.value : '';
+  const ctypeEl = document.getElementById('t2DispChartType');
+  const ctype = ctypeEl ? ctypeEl.value : 'bar';
+
+  // 分组：产地
+  const groups = org ? [org] : ['dom', 'imp'];
+  const datasets = [];
+  const perBucketModels = {};
+  groups.forEach(function(o, gi) {
+    const agg = {};
+    T2_DISP_BUCKETS.forEach(v => agg[v] = []);
+    rows.forEach(function(m) {
+      if (brandOrigin(m.brand_name) !== o) return;
+      const d = modelDisp(m), p = modelPrice(m);
+      if (!d || !p) return;
+      const b = dispBucket(d);
+      agg[b].push(p);
+      const k = o + '|' + b;
+      if (!perBucketModels[k]) perBucketModels[k] = [];
+      perBucketModels[k].push(m);
     });
-    html += '<td><b>' + row.total + '</b></td></tr>';
+    const data = T2_DISP_BUCKETS.map(v => agg[v].length ? avgOf(agg[v]) : null);
+    datasets.push({
+      label: groups.length > 1 ? originLabel(o) : zhEn('平均售价', 'Avg Price'),
+      data: data,
+      type: ctype,
+      backgroundColor: groups.length > 1
+        ? (o === 'imp' ? 'rgba(231,76,60,0.72)' : 'rgba(52,152,219,0.72)')
+        : 'rgba(52,152,219,0.72)',
+      borderColor: groups.length > 1 ? (o === 'imp' ? '#e74c3c' : '#2980b9') : '#2980b9',
+      borderWidth: ctype === 'line' ? 2 : 1,
+      fill: false,
+      tension: 0.28,
+      pointRadius: ctype === 'line' ? 3 : 0,
+      spanGaps: true
+    });
   });
-  html += '</tbody><tfoot><tr><td class="brand-col">\u603b\u8ba1</td>';
-  d.range_totals.forEach(function(t) { html += '<td>' + t + '</td>'; });
-  html += '<td><b>' + d.range_totals.reduce(function(a,b){return a+b;},0) + '</b></td></tr></tfoot></table>';
-  document.getElementById(wrapperId).innerHTML = html;
+
+  const labels = T2_DISP_BUCKETS.map(dispBucketLabel);
+  _mkOrUpdate('chartDispPrice2', {
+    type: ctype,
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      interaction: { mode: 'index', intersect: false },
+      onClick: function(evt, els) {
+        if (!els || !els.length) return;
+        const el = els[0];
+        const o = groups[el.datasetIndex] || org || 'dom';
+        const v = T2_DISP_BUCKETS[el.index];
+        const list = perBucketModels[o + '|' + v] || [];
+        const key = 'd' + (++_t2Id);
+        _t2DispStore[key] = { o: o, v: v, models: list };
+        showDispPriceModels(key);
+      },
+      scales: {
+        x: { title: { display: true, text: zhEn('排量档位 (cc)', 'Displacement (cc)') }, ticks: { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10 } } },
+        y: { beginAtZero: true, title: { display: true, text: zhEn('平均售价 (元)', 'Avg Price (¥)') }, ticks: { callback: v => fmtPrice(v) } }
+      },
+      plugins: {
+        barValueLabels: { enabled: false },
+        legend: { display: groups.length > 1, labels: { usePointStyle: true } },
+        tooltip: { callbacks: { label: ctx => { const v = ctx.parsed.y; return (ctx.dataset.label ? ctx.dataset.label + ': ' : '') + (v ? fmtPrice(v) : zhEn('无数据', 'n/a')); } } }
+      }
+    }
+  }, _chartDispPrice2);
 }
-function showMX(key) {
-  var s = _mxStore[key];
-  if(!s) return;
-  showMatrixModels(s.panelId, s.titleId, s.contentId, s.brand, s.range, s.models);
-}
-function showMatrixModels(panelId, titleId, contentId, brand, range, models) {
-  const panel = document.getElementById(panelId);
-  const title = document.getElementById(titleId);
-  const content = document.getElementById(contentId);
-  title.textContent = zhEn(`${brand} × ${range} 区间（${models.length} 款）`, `${tBrand(brand)} × ${range} (${models.length} models)`);
-  if (models.length === 0) {
-    content.innerHTML = '<p style="color:#999;font-size:13px;">'+t('no_models')+'</p>';
+function showDispPriceModels(key) {
+  const s = _t2DispStore[key]; if (!s) return;
+  const panel = document.getElementById('dispPricePanel2');
+  const title = document.getElementById('dispPriceTitle2');
+  const content = document.getElementById('dispPriceContent2');
+  const lb = dispBucketLabel(s.v, T2_DISP_BUCKETS.indexOf(s.v));
+  title.textContent = zhEn(`${originLabel(s.o)} · ${lb}cc 档（共 ${s.models.length} 款）`, `${originLabel(s.o)} · ${lb}cc (${s.models.length} models)`);
+  if (!s.models.length) {
+    content.innerHTML = '<p style="color:#999;font-size:13px;">' + t('no_models') + '</p>';
   } else {
-    content.innerHTML = `<table><thead><tr><th>${t('th_model')}</th><th>${t('th_type')}</th><th>${t('th_min')}</th></tr></thead><tbody>${models.map(m=>`<tr><td>${m.name}</td><td><span class="type-tag">${tType(m.type)}</span></td><td class="price">${fmtPrice(m.price)}</td></tr>`).join('')}</tbody></table>`;
+    const sorted = s.models.slice().sort((a, b) => (Number(b.min_price) || 0) - (Number(a.min_price) || 0));
+    content.innerHTML = `<table><thead><tr><th>${t('th_model')}</th><th>${t('th_brand')}</th><th>${t('th_type')}</th><th>${t('th_disp')}</th><th>${t('th_min')}</th></tr></thead><tbody>${
+      sorted.slice(0, 60).map(m => `<tr><td>${m.good_name}</td><td>${tBrand(m.brand_name)}</td><td><span class="type-tag">${tType(m.vehicle_type)}</span></td><td>${modelDisp(m) ? modelDisp(m) + 'cc' : '-'}</td><td class="price">${fmtPrice(m.min_price)}</td></tr>`).join('')
+    }</tbody></table>` + (sorted.length > 60 ? `<p style="color:#999;font-size:12px;">${zhEn('仅显示前 60 款', 'First 60 shown')}</p>` : '');
+  }
+  panel.classList.add('active');
+}
+
+function renderAvgPrice2(rows) {
+  const dimEl = document.getElementById('t2AvgDimSel');
+  const dim = dimEl ? dimEl.value : 'brand';
+  const rangeEl = document.getElementById('t2AvgRangeSel');
+  const rangeKey = (rangeEl && !rangeEl.disabled) ? rangeEl.value : '';
+  const ctypeEl = document.getElementById('t2AvgChartType');
+  const ctype = ctypeEl ? ctypeEl.value : 'bar';
+  const topN = parseInt((document.getElementById('t2AvgTopN') || {}).value || '20');
+
+  let src = rows;
+  if (rangeKey) src = src.filter(m => dispRangeKey(modelDisp(m)) === rangeKey);
+
+  const buckets = {};
+  const bucketModels = {};
+  src.forEach(function(m) {
+    const p = modelPrice(m);
+    if (!p) return;
+    let k = null;
+    if (dim === 'brand') k = m.brand_name;
+    else if (dim === 'origin') k = brandOrigin(m.brand_name);
+    else { k = dispRangeKey(modelDisp(m)); if (!k) return; }
+    if (!k) return;
+    buckets[k] = buckets[k] || [];
+    buckets[k].push(p);
+    bucketModels[k] = bucketModels[k] || [];
+    bucketModels[k].push(m);
+  });
+
+  let keys = Object.keys(buckets);
+  if (dim === 'range') {
+    keys = T2_DISP_RANGES.map(r => r.key).filter(k => buckets[k]);
+  } else if (dim === 'origin') {
+    keys = ['dom', 'imp'].filter(k => buckets[k]);
+  } else {
+    keys = keys.filter(k => buckets[k].length >= 1)
+      .sort((a, b) => buckets[b].length - buckets[a].length || avgOf(buckets[b]) - avgOf(buckets[a]))
+      .slice(0, topN);
+    keys.sort((a, b) => avgOf(buckets[b]) - avgOf(buckets[a]));
+  }
+
+  const labels = keys.map(k => dim === 'brand' ? tBrand(k) : (dim === 'origin' ? originLabel(k) : dispRangeLabel(k)));
+  const values = keys.map(k => avgOf(buckets[k]));
+  const counts = keys.map(k => buckets[k].length);
+  const palette = ['#e94560','#0f3460','#3498db','#27ae60','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e','#c0392b','#16a085','#8e44ad','#d35400','#2c3e50','#7f8c8d','#2980b9','#f1c40f','#e74c3c','#5dade2','#48c9b0','#af7ac5','#f5b041','#52be80','#ec7063'];
+
+  _mkOrUpdate('chartAvgPrice2', {
+    type: ctype,
+    data: {
+      labels: labels,
+      datasets: [{
+        label: zhEn('平均售价', 'Avg Price'),
+        data: values,
+        type: ctype,
+        backgroundColor: keys.map((k, i) => dim === 'origin' ? (k === 'imp' ? 'rgba(231,76,60,0.72)' : 'rgba(52,152,219,0.72)') : palette[i % palette.length]),
+        borderColor: keys.map((k, i) => dim === 'origin' ? (k === 'imp' ? '#e74c3c' : '#2980b9') : palette[i % palette.length]),
+        borderWidth: ctype === 'line' ? 2 : 1,
+        fill: false,
+        tension: 0.28,
+        pointRadius: ctype === 'line' ? 3 : 0
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      onClick: function(evt, els) {
+        if (!els || !els.length) return;
+        const i = els[0].index;
+        const key = 'a' + (++_t2Id);
+        _t2AvgStore[key] = { dim: dim, k: keys[i], label: labels[i], models: bucketModels[keys[i]] || [], avg: values[i] };
+        showAvgPriceModels(key);
+      },
+      scales: {
+        x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 45, font: { size: 10 } } },
+        y: { beginAtZero: true, title: { display: true, text: zhEn('平均售价 (元)', 'Avg Price (¥)') }, ticks: { callback: v => fmtPrice(v) } }
+      },
+      plugins: {
+        barValueLabels: { enabled: false },
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => { const i = ctx.dataIndex; return ctx.dataset.label + ': ' + fmtPrice(ctx.parsed.y) + zhEn(`（${counts[i]} 款）`, ` (${counts[i]} models)`); } } }
+      }
+    }
+  }, _chartAvgPrice2);
+}
+function showAvgPriceModels(key) {
+  const s = _t2AvgStore[key]; if (!s) return;
+  const panel = document.getElementById('avgPricePanel2');
+  const title = document.getElementById('avgPriceTitle2');
+  const content = document.getElementById('avgPriceContent2');
+  title.textContent = zhEn(`${s.label}：均价 ${fmtPrice(s.avg)}（共 ${s.models.length} 款）`, `${s.label}: avg ${fmtPrice(s.avg)} (${s.models.length} models)`);
+  if (!s.models.length) {
+    content.innerHTML = '<p style="color:#999;font-size:13px;">' + t('no_models') + '</p>';
+  } else {
+    const sorted = s.models.slice().sort((a, b) => (Number(b.min_price) || 0) - (Number(a.min_price) || 0));
+    content.innerHTML = `<table><thead><tr><th>${t('th_model')}</th><th>${t('th_brand')}</th><th>${t('th_type')}</th><th>${t('th_disp')}</th><th>${t('th_min')}</th></tr></thead><tbody>${
+      sorted.slice(0, 60).map(m => `<tr><td>${m.good_name}</td><td>${tBrand(m.brand_name)}</td><td><span class="type-tag">${tType(m.vehicle_type)}</span></td><td>${modelDisp(m) ? modelDisp(m) + 'cc' : '-'}</td><td class="price">${fmtPrice(m.min_price)}</td></tr>`).join('')
+    }</tbody></table>` + (sorted.length > 60 ? `<p style="color:#999;font-size:12px;">${zhEn('仅显示前 60 款', 'First 60 shown')}</p>` : '');
   }
   panel.classList.add('active');
 }
@@ -909,8 +1185,16 @@ async function loadFilteredModels() {
   params.set('sort',document.getElementById('sort2').value);
   const r = await fetch('/api/models?'+params);
   const d = await r.json();
-  document.getElementById('modelInfo2').textContent = zhEn(`共 ${d.total} 款车型`, `${d.total} models`);
-  document.getElementById('modelTbody2').innerHTML = d.models.map(m=>{
+  // 产地（进口/国产）为客户端维度，在结果集上二次过滤
+  const org=document.getElementById('originFilter2').value;
+  let models = d.models || [];
+  if (org) models = models.filter(m => brandOrigin(m.brand_name) === org);
+  _tab2Models = models;
+  const infoTxt = org
+    ? zhEn(`共 ${models.length} 款车型（${originLabel(org)}）`, `${models.length} models (${originLabel(org)})`)
+    : zhEn(`共 ${models.length} 款车型`, `${models.length} models`);
+  document.getElementById('modelInfo2').textContent = infoTxt;
+  document.getElementById('modelTbody2').innerHTML = models.map(m=>{
     const disp=extractDisp(m.good_name);
     return `<tr><td>${m.good_pic?`<img src="${baImgUrl(m)}" loading="lazy">`:''}</td>
     <td>${m.good_name}</td><td>${tBrand(m.brand_name)}</td><td>${m.series_name||'-'}</td>
@@ -919,10 +1203,10 @@ async function loadFilteredModels() {
     <td>${disp?disp+'cc':'-'}</td>
     <td class="price">${fmtPrice(m.min_price)}</td><td>${fmtPrice(m.max_price)}</td></tr>`;
   }).join('');
-  loadMatrix2();
+  renderTab2Charts();
 }
 function resetFilters2() {
-  ['typeFilter2','energyFilter2','brandFilter2','sort2'].forEach(id=>document.getElementById(id).value='');
+  ['typeFilter2','energyFilter2','brandFilter2','sort2','originFilter2'].forEach(id=>document.getElementById(id).value='');
   ['minDisp2','maxDisp2','minPrice2','maxPrice2','keyword2'].forEach(id=>document.getElementById(id).value='');
   loadFilteredModels();
 }
@@ -1049,7 +1333,6 @@ function selectBrandFromList(brandId) {
   document.getElementById('panel-filter').classList.add('active');
   document.getElementById('brandFilter2').value = String(brandId);
   loadFilteredModels();
-  loadMatrix2();
   window.scrollTo(0,0);
 }
 
@@ -1612,7 +1895,7 @@ function toggleLang() {
   if (active) {
     const id = active.id;
     if(id==='panel-brand') loadTab1();
-    else if(id==='panel-filter') loadMatrix2();
+    else if(id==='panel-filter') loadFilteredModels();
     else if(id==='panel-analysis') loadAnalysis();
     else if(id==='panel-brandlist') loadBrandList();
     else if(id==='panel-brandanalysis') loadBaTab();

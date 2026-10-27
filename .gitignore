@@ -17,3 +17,6 @@ __srv.js
 models_raw_v2.json
 brand_directory.json
 data.json.bak.*
+
+# 本地依赖锁文件（不入库）
+package-lock.json
